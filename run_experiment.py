@@ -52,6 +52,9 @@ def build_output_filename(args, dataset_tag):
         f"noise{args.noise_std}", f"ns{args.num_noise_samples}",
         f"tok{args.token_mode}",
     ]
+    if args.data_file:
+        # Tag non-default splits (e.g. train_vqa) so they never overwrite dev results
+        parts.insert(1, os.path.splitext(os.path.basename(args.data_file))[0])
     if args.attack_mode in ("text", "both"):
         parts.append(args.text_attack_type)
     if args.config_name:

@@ -125,7 +125,10 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_path = os.path.join(
         OUTPUT_DIR,
-        f"cleaneval_{args.dataset_root}_{model_name.split('/')[-1]}_n{args.num_samples}_"
+        f"cleaneval_{args.dataset_root}_"
+        # Tag non-default splits (e.g. train_vqa) so they never overwrite dev results
+        f"{os.path.splitext(os.path.basename(args.data_file))[0] + '_' if args.data_file else ''}"
+        f"{model_name.split('/')[-1]}_n{args.num_samples}_"
         f"seed{args.seed}_noise{args.noise_std}_ns{args.num_noise_samples}_tok{args.token_mode}"
         f"{'_' + args.config_name if args.config_name else ''}.json"
     )
