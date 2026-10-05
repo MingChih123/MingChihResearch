@@ -1,0 +1,251 @@
+# 專案交接文件(給 Claude Code)
+
+> 使用方式:把這份檔案放在專案根目錄(`MChih_Exp\2\`),建議改名成 `CLAUDE.md`,Claude Code 開啟專案時會自動讀取。
+> 使用者是碩士生,語言用繁體中文溝通,程式碼註解與變數用英文即可。
+
+---
+
+## 0. 先看這裡:最優先要查的問題
+
+**加權投票(weighted vote)的結果有一個沒查清楚的疑點,在動其他事情之前先處理。**
+
+目前所有「加權投票大幅勝過多數決」的數字(恢復率 66%~100%)都來自「標準答案全部是 Yes」的樣本。已經看到的線索:
+
+1. `verify_weighted.py` 比對 22 筆被攻擊成功的樣本,多數決與加權投票答案不同的 14 筆,**全部是同一個方向**(多數決 No、加權 Yes),沒有反向的。
+2. 誤判修正實驗(混合 Yes/No)的 50 筆小測試中,被「修正」的樣本全都是標準答案為 Yes 的;兩筆標準答案為 No、模型答成 Yes 的樣本,所有防禦都沒有修正。
+3. 誤判修正實驗(n=250,84 筆原本答錯)的修正率是 46%~54%,二元分類下亂猜期望值就是 50%,沒有明顯超過。
+
+**懷疑加權投票有偏向回答 Yes 的系統性傾向,而不是真的在修正。** 可能的來源(都還沒驗證):
+
+- `defense.py::get_answer_with_confidence` 用 `" Yes"` / `" No"`(前面帶空格)的 token id 去比 logit,模型實際輸出的第一個 token 可能是不帶空格的 `"Yes"` / `"No"`。`common.py::get_yes_no_token_ids` 取的是 `processor.tokenizer(" Yes")` 的第一個 id(實測 7414 / 2308)。
+- `weighted_vote` 平手時判 Yes(`yes_weight >= no_weight`)。
+- 多數決走的是真正生成的文字(`generate`),加權走的是 logit 比較,兩者判斷依據不同。
+
+**建議的第一步診斷(尚未執行):**
+
+1. 在乾淨、混合 Yes/No 的樣本上,同一個輸入分別用「生成文字解析」和「logit 比較」得到答案,算兩者的一致率與混淆矩陣、Yes 的比例。
+2. 試不同 token 設定:`"Yes"`/`"No"`(無空格)、`" Yes"`/`" No"`(有空格),或兩者的 logsumexp,看判斷是否改變。
+3. 平手規則改成中性(例如平手回傳 Unclear 或看生成答案)。
+4. 用修正後的版本重跑:攻擊恢復率(只有 Yes 樣本)、以及**含 gt=No 樣本的整體準確率 / F1 / 混淆矩陣**。
+
+在這件事查清楚之前,**不要把加權投票的數字當成確定結論**。
+
+---
+
+## 1. 研究目標
+
+- 任務:判斷迷因(圖+圖上文字)是否為仇恨迷因,輸出 Yes / No。
+- 模型:通用視覺語言模型(Qwen2-VL),**完全凍結、不訓練、不微調**。以生成式 VQA 方式回答,不是專用分類器。
+- 研究問題:對圖片做人眼看不出的對抗攻擊(PGD)會讓模型答錯;能不能只在推論階段(test-time)加防禦,把答案救回來。
+- 防禦的核心:換問法、對圖片加隨機雜訊、多次詢問後投票(多數決 / 以 logit 差距當信心的加權投票)。
+- 靈感來源:PDA(改寫+投票)、R-TPT(可靠度加權集成)、Self-Consistency。AOM、TTC 是同類方法,但本實驗沒有用到它們的機制(AOM 在特徵空間操作;TTC 先偵測再主動反擊)。
+- 文字端:把迷因上的文字**明講寫進 prompt**,不讓模型自己 OCR,目的是讓攻擊只影響視覺語意判斷。
+
+---
+
+## 2. 環境
+
+- Windows(CMD),conda 環境名稱 `pda`,Python 3.10。
+- GPU:NVIDIA RTX 3070,**8GB 顯存**(影響很大,見下)。
+- 主要套件:torch 2.4.1+cu121、transformers、accelerate、qwen-vl-utils、textattack 0.3.10、tensorflow 2.13、tensorflow_hub、numpy 1.24.3、nltk。
+- **環境警告**:安裝 tensorflow 後 pip 報 `torch 2.4.1+cu121 requires typing-extensions>=4.8.0, but you have 4.5.0`。目前能跑,但可能是之後出奇怪錯誤的原因,若遇到莫名錯誤先檢查這個。
+- 模型:`Qwen/Qwen2-VL-2B-Instruct`(主力)。`Qwen/Qwen2-VL-7B-Instruct` 只能降低圖片解析度後小樣本跑(`--min_pixels 65536 --max_pixels 200704`),一筆約 260~280 秒。
+- 8GB 的限制:PGD 反向傳播時 7B 預設參數會 OOM;已凍結全部權重、`model.eval()`、不開 gradient checkpointing(開了會讓梯度變 None)。
+- 專案路徑:`C:\Users\USER\OneDrive\Desktop\MChih_Exp\2\`
+
+---
+
+## 3. 資料集
+
+| 資料集 | 位置 | 使用的切分 | 筆數 |
+|---|---|---|---|
+| Facebook Hateful Memes (FB) | `dataset/FB/`,圖在 `img/` | `dev_vqa.json` | 500(250 Yes / 250 No) |
+| HarMeme | `dataset/HarMeme/`,圖在 `images/` | `annotations/val_vqa.json` | 177(61 Yes / 116 No) |
+
+- 只用 dev / val 做評測,train 沒用到(沒有任何訓練步驟)。
+- VQA 格式:`{"image": "...", "question": "...", "answer": "Yes"/"No"}`,`label=1` → `Yes`。
+- FB 的 question 模板:`Given the meme image with the caption "{caption}", does this meme contain hateful content targeting a specific group (e.g. race, religion, gender, disability)? Answer only Yes or No.`
+- HarMeme 的 question 措辭不同:`...does this meme contain hateful or harmful content targeting a specific group or individual? Answer only Yes or No.` ,而 `defense.py::make_paraphrase_questions` 的三個模板是 FB 風格,對 HarMeme 不完全一致(待決定要不要統一)。
+- HarMeme 的 json 原本 `image` 欄位缺 `images/` 前綴,已用 `fix_harmeme_paths.py` 修好(可重複執行,不會重複加前綴)。
+- HarMeme 的 caption 含換行,`extract_caption` 用 `question.split('caption "')[1].split('"')[0]` 抽取,caption 內若有雙引號會截斷。
+
+---
+
+## 4. 程式結構
+
+```
+config.py                       資料集路徑、預設資料檔、模型別名(qwen2b / qwen7b)
+common.py                       載入模型、build_inputs、generate_with_pixel_values、parse_answer、get_yes_no_token_ids
+attack.py                       pgd_attack_first_token(圖片)、leetspeak / char_swap / apply_text_attack(文字)
+defense.py                      三類防禦,各有多數決與加權兩版(見下)
+run_experiment.py               主實驗:抽樣 → 乾淨預測 → 攻擊 → 六種防禦 → 統計 → 存 json
+clean_control_check.py          乾淨圖片套防禦,看會不會把原本答對的弄錯(尚未更新加權版)
+run_error_correction_experiment.py   沒有攻擊,抓模型本來答錯的樣本,測防禦能不能修正
+run_textfooler_experiment.py    TextFooler 文字攻擊(多樣本)
+textattack_wrapper.py           把 VLM 包成 TextAttack 的 ModelWrapper(圖固定,換文字)
+test_textfooler.py              TextFooler 單樣本最小測試
+summarize_results.py            掃描 ./output/*.json 彙整成 ./output/_summary.csv
+verify_weighted.py              比對多數決與加權投票逐筆差異(要手動改檔名與欄位)
+fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
+output/                         所有實驗結果 json
+```
+
+**defense.py 的函式:**
+
+| 防禦 | 多數決 | 加權 |
+|---|---|---|
+| 文字(3 種同義問法) | `paraphrase_defense` | `paraphrase_defense_weighted` |
+| 像素(疊加高斯雜訊 `noise_std`,取樣 `num_noise_samples` 次) | `randomized_smoothing_defense` | `randomized_smoothing_defense_weighted` |
+| 組合(3 種問法 × `num_noise_samples//2` 次雜訊) | `combined_defense` | `combined_defense_weighted` |
+
+共用:`majority_vote`、`weighted_vote`、`get_answer_with_confidence`。信心分數 = 第一個生成 token 的 `|logit(" Yes") - logit(" No")|`;加權 = 把 Yes 陣營與 No 陣營的信心分數各自加總比大小。
+
+**攻擊細節:**
+
+- PGD 作用在 processor 產生的 `pixel_values`(已正規化的 patch 張量),不是 [0,1] 像素。
+- 目標:最大化第一個 token 的 `logit(No) - logit(Yes)`。
+- 預設 `epsilon=0.1, alpha=0.04, num_steps=3`。
+- 只攻擊「標準答案 Yes 且模型乾淨時也答 Yes」的樣本(`only_yes=True`)。**因此目前攻擊實驗完全沒有測到 gt=No 的方向。**
+- 指標:攻擊成功率 = 攻擊成功數 / 乾淨答對數;恢復率 = 防禦後答對數 / 攻擊成功數。
+
+---
+
+## 5. 指令速查(Windows CMD)
+
+單行長指令用 `&&` 串接,**不要混用 `^` 換行**(曾因此只有最後一個指令執行)。要換行就把 `&&^` 黏在行尾。
+
+```bash
+# 主實驗(三種攻擊模式: image / text / both)
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --attack_mode image
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --attack_mode text --text_attack_type leetspeak --text_corruption_rate 1.0
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --attack_mode text --text_attack_type char_swap --text_num_swaps 8
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --attack_mode both --epsilon 0.05 --text_attack_type char_swap --text_num_swaps 2 --config_name joint_light
+
+# 攻擊強度 / 防禦強度掃描
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --epsilon 0.05 --config_name weak
+python -u run_experiment.py --dataset_root FB --num_samples 200 --seed 0 --noise_std 0.1 --config_name noise01
+
+# HarMeme(Yes 只有 61 筆,直接 -1 跑全部)
+python -u run_experiment.py --dataset_root HarMeme --num_samples -1 --seed 0
+
+# 7B(要降解析度)
+python -u run_experiment.py --dataset_root FB --num_samples 30 --seed 0 --model_name qwen7b --min_pixels 65536 --max_pixels 200704 --config_name model7b
+
+# 其他實驗
+python -u clean_control_check.py --dataset_root FB --num_samples 30 --seed 0 --noise_std 0.3
+python -u run_error_correction_experiment.py --dataset_root FB --num_samples 250 --seed 0
+python -u run_textfooler_experiment.py --dataset_root FB --num_samples 30 --seed 0 --query_budget 200
+
+# 彙整
+python summarize_results.py
+```
+
+`run_experiment.py` 參數:`--dataset_root --data_file --model_name --num_samples --max_new_tokens --seed --epsilon --alpha --num_steps --noise_std --num_noise_samples --min_pixels --max_pixels --config_name --output_file --attack_mode --text_attack_type --text_corruption_rate --text_num_swaps`。輸出檔名會帶資料集、模型、攻擊模式、關鍵參數,不會互相覆蓋。
+
+---
+
+## 6. 已完成的實驗與數據
+
+以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
+
+### 6.1 攻擊強度掃描(FB,n=200 抽樣,noise_std=0.3)
+
+乾淨答對 49 筆進入攻擊。
+
+| epsilon | 被攻擊成功 / 49 | 文字(多數決) | 文字(加權) | 像素(多數決) | 組合(多數決) | 組合(加權) |
+|---|---|---|---|---|---|---|
+| 0.05 | 17 | 5.9% | 82.4% | 41.2% | 41.2% | 94.1% |
+| 0.10 | 23 | 13.0% | 78.3% | 21.7% | 39.1% | 95.7% |
+| 0.20 | 21 | 14.3% | 71.4% | 28.6% | 33.3% | 90.5% |
+
+(較早、尚未加入加權投票的版本:ε=0.05/0.1/0.2 的攻擊成功率 36.7% / 51.0% / 44.9%,多數決恢復率文字 16.7/20.0/13.6、像素 44.4/40.0/18.2、組合 50.0/44.0/31.8。)
+
+### 6.2 防禦強度掃描(FB,n=200,epsilon=0.1)
+
+| noise_std | 被攻擊成功 | 文字(多數決) | 文字(加權) | 像素(多數決) | 組合(多數決) | 組合(加權) |
+|---|---|---|---|---|---|---|
+| 0.1 | 24 | 16.7% | 83.3% | 4.2% | 16.7% | 83.3% |
+| 0.2 | 21 | 14.3% | 66.7% | 14.3% | 19.0% | 85.7% |
+| 0.3 | 23 | 30.4% | 82.6% | 30.4% | 39.1% | 95.7% |
+| 0.5 | 22 | 18.2% | 72.7% | 45.5% | 45.5% | 100% |
+
+觀察:噪音從 0.1 到 0.3 恢復率上升,0.3 到 0.5 差不多持平。
+**注意:`pixel_weighted` 在這些 n=200 的實驗裡還沒有數字**——這幾組是在加入 `randomized_smoothing_defense_weighted` 之前跑的。`summarize_results.py` 也還沒加這一欄。
+
+### 6.3 乾淨副作用(clean-control)
+
+只在 `noise_std=0.3`、混合抽樣 30 筆、乾淨答對 21 筆的情況下做過,**只有多數決版本**:文字 100%、像素 90.5%、組合 95.2%。加權版本、其他 noise_std、HarMeme 都沒做。
+
+### 6.4 沒有攻擊的誤判修正(FB,混合 Yes/No,n=250 抽樣)
+
+乾淨準確率 166/250 = 66.4%;原本答錯 84 筆。
+
+| 防禦 | 多數決 | 加權 |
+|---|---|---|
+| 文字 | 14.3% | 53.6% |
+| 像素 | 2.4% | 46.4% |
+| 組合 | 8.3% | 51.2% |
+
+**問題:修正率貼近 50%(二元亂猜期望值)**,還沒拆方向(gt=Yes 答成 No / gt=No 答成 Yes)分開算,也沒有量原本答對的 166 筆被防禦弄錯的比例。
+
+### 6.5 文字攻擊
+
+- 規則型(leetspeak、char_swap):即使 leetspeak 100% 替換、char_swap 交換 8 組,攻擊成功率 0%(小樣本,乾淨答對 4 筆)。
+- TextFooler(TextAttack,query_budget=200,每筆約 35~57 秒):抽樣 30 筆、乾淨答對 8 筆,1 筆「成功」(12.5%)。查看該成功案例:
+  - 原文 `doesnt have food, water, electricity proud of nuclear weapons`
+  - 攻擊後 `haha got food, water, electricity grandiose of nuclear disarmament`
+  - 是整句語意被反轉(不再是諷刺攻擊),不是保留仇恨語意的偽裝。TextFooler 只約束文字語意相近,不管圖文聯合語意。
+- 模型在 TextFooler 過程中**有**看圖(wrapper 每次都帶同一張圖),判斷無惡意是因為文字本身語意已變成正面。
+
+### 6.6 其他
+
+- HarMeme(61 筆 Yes 全跑):乾淨答對 9、攻擊成功 5,樣本太小,早期版本(無加權),僅供參考。
+- 7B(n=30):乾淨答對 11、攻擊成功 4,樣本太小。
+- `--attack_mode both` 只跑過 n=10 的連通測試,結果與純圖片攻擊相同(文字攻擊沒有貢獻)。
+
+---
+
+## 7. 其他已知問題
+
+1. **再現性**:相同參數重跑,文字防禦(`text`)的結果曾不同(medium 13.0% vs noise03 30.4%,設定相同)。`pixel` / `combo` 因為有 `seed_offset` 是可重現的。文字防禦沒有雜訊,懷疑是 GPU 浮點誤差在邊界樣本翻轉。
+2. `combined_defense*` 內對每個問法都用相同的 `seed_offset + i`,所以每個問法看到的是同一組雜訊。
+3. 平手規則偏向 Yes(見第 0 節)。
+4. 模型本身偏向回答 No(乾淨時 recall 偏低:早期 100 筆測試 accuracy 68%、recall 41.9%)。
+5. TextFooler 每筆要查詢上百次且逐一呼叫 VLM,慢;還用到 Universal Sentence Encoder(TensorFlow)。
+6. 目前進入評測的樣本數:FB 約 20~25(被攻擊成功的數量),HarMeme / 7B / TextFooler 都只有個位數。
+
+---
+
+## 8. 待辦(依優先順序)
+
+**P0 — 先確認加權投票沒有偏誤**(見第 0 節)
+- 寫診斷腳本:生成文字 vs logit 比較的一致率、混淆矩陣、Yes 比例。
+- 試不帶空格的 token、改平手規則。
+- 在混合 Yes/No 樣本上報整體 accuracy / F1 / 混淆矩陣(乾淨、攻擊後、防禦後)。
+
+**P1 — 誤判修正實驗重新分析**
+- 把 84 筆拆成兩個方向分別算修正率。
+- 加上「原本答對被防禦弄錯」的比例(傷害率)。
+- 對照 50% 亂猜基準,必要時算信賴區間。
+
+**P2 — 補齊既有實驗**
+- `summarize_results.py` 加 `pixel_weighted_defense_recovery_rate`。
+- 重跑 noise_std 掃描,補 `pixel_weighted`。
+- `clean_control_check.py` 加入加權版本,涵蓋各 noise_std 與混合 Yes/No。
+
+**P3 — 延伸**
+- 圖文聯合攻擊(輕度)的概念驗證:`--attack_mode both` 搭配較小的 epsilon 與輕度文字攻擊,並要有足夠樣本。
+- 擴大 TextFooler 樣本數(目前只抽 30 筆、8 筆進入測試)。
+- 考慮加入 TTC 式的偵測步驟(先判斷是否被攻擊,乾淨圖不套防禦),降低對乾淨圖的傷害。
+- 改寫問法目前是人工寫死的三個模板,只適用這個任務;若要換任務得重寫模板或接外部 LLM 產生。
+
+---
+
+## 9. 使用者偏好(給 Claude Code)
+
+- 回答用繁體中文,口語、直接,不要太多官樣文字或誇飾用語。
+- 要程式碼時給**整份可複製貼上的檔案**,不要只給要自己拼接的片段;指令也要能直接貼到 CMD 執行。
+- 使用者不熟 GitHub,不要假設她會用 git 流程。
+- 動手改既有檔案前先說明改什麼;已經跑出數據的實驗腳本盡量不要破壞,新功能用新參數或新檔案加。
+- 有數字看起來太好或太怪時,先指出疑點再往下做。
+- 報告用的簡報講稿裡**不要出現「學姊的論文」**這類說法。
