@@ -1,0 +1,12 @@
+torch
+transformers>=4.45.0
+accelerate
+qwen-vl-utils
+pillow
+numpy
+
+=====
+安裝方式(記得你環境需要 CUDA 版本的 torch,不是 CPU 版):
+
+pip install torch --index-url https://download.pytorch.org/whl/cu121 --break-system-packages
+pip install transformers accelerate qwen-vl-utils pillow numpy --break-system-packages
