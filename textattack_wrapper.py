@@ -6,7 +6,7 @@ TextAttack 要求:輸入一批候選文字,輸出每一批對應的 [No的機率
 import torch
 import torch.nn.functional as F
 from textattack.models.wrappers import ModelWrapper
-from common import build_inputs
+from common import build_inputs, yes_no_logits
 
 
 class VLMTextAttackWrapper(ModelWrapper):
@@ -45,8 +45,10 @@ class VLMTextAttackWrapper(ModelWrapper):
                 last_logits = outputs.logits[0, -1, :]
 
                 # 只取 Yes/No 這兩個 token 的 logit,做 softmax 得到相對機率
-                two_logits = torch.tensor([last_logits[self.no_id].item(), last_logits[self.yes_id].item()])
+                # yes_id / no_id are lists of token ids (see common.get_yes_no_token_ids)
+                logit_yes, logit_no = yes_no_logits(last_logits, self.yes_id, self.no_id)
+                two_logits = torch.tensor([logit_no.item(), logit_yes.item()])
                 probs = F.softmax(two_logits, dim=0)
                 probs_batch.append(probs.tolist())
 
-        return torch.tensor(probs_batch)
+        return torch.tensor(probs_batch)

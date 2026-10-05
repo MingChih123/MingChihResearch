@@ -50,6 +50,7 @@ def build_output_filename(args, dataset_tag):
         f"n{args.num_samples}", f"seed{args.seed}",
         f"eps{args.epsilon}", f"a{args.alpha}", f"s{args.num_steps}",
         f"noise{args.noise_std}", f"ns{args.num_noise_samples}",
+        f"tok{args.token_mode}",
     ]
     if args.attack_mode in ("text", "both"):
         parts.append(args.text_attack_type)
@@ -84,6 +85,8 @@ def main():
                          help="leetspeak 攻擊的替換機率,0.0~1.0,越高攻擊越強")
     parser.add_argument("--text_num_swaps", type=int, default=3,
                          help="char_swap 攻擊要交換幾組相鄰字母,越多攻擊越強")
+    parser.add_argument("--token_mode", type=str, default="nospace",
+                         help="Yes/No token spelling for logit-based steps: nospace (correct) / lse / space (old, buggy)")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -103,7 +106,8 @@ def main():
     print(f"Output will be saved to: {output_path}", flush=True)
 
     model, processor = load_model(args.model_name, args.min_pixels, args.max_pixels)
-    yes_id, no_id = get_yes_no_token_ids(processor)
+    yes_id, no_id = get_yes_no_token_ids(processor, args.token_mode)
+    print(f"Token mode: {args.token_mode} | yes_ids={yes_id} no_ids={no_id}", flush=True)
 
     results = []
     overall_start = time.time()
@@ -264,4 +268,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()

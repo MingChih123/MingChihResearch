@@ -21,10 +21,34 @@ def load_model(model_name="Qwen/Qwen2-VL-2B-Instruct",
     return model, processor
 
 
-def get_yes_no_token_ids(processor):
-    yes_id = processor.tokenizer(" Yes", add_special_tokens=False).input_ids[0]
-    no_id = processor.tokenizer(" No", add_special_tokens=False).input_ids[0]
-    return yes_id, no_id
+# Which token spellings count as "Yes" / "No" for the first generated token.
+# The model's first token is "Yes"/"No" WITHOUT a leading space (verified by
+# diagnose_weighted_bias.py: 100/100 first tokens were "Yes" or "No").
+# "space" is the old (buggy) setting, kept only to reproduce old results.
+TOKEN_MODES = {
+    "nospace": (["Yes"], ["No"]),
+    "space": ([" Yes"], [" No"]),
+    "lse": (["Yes", " Yes"], ["No", " No"]),
+}
+
+
+def get_yes_no_token_ids(processor, mode="nospace"):
+    """Return (yes_ids, no_ids) as lists of token ids."""
+    if mode not in TOKEN_MODES:
+        raise ValueError(f"unknown token mode: {mode} (choose from {list(TOKEN_MODES)})")
+    yes_words, no_words = TOKEN_MODES[mode]
+    tok = processor.tokenizer
+    yes_ids = [tok(w, add_special_tokens=False).input_ids[0] for w in yes_words]
+    no_ids = [tok(w, add_special_tokens=False).input_ids[0] for w in no_words]
+    return yes_ids, no_ids
+
+
+def yes_no_logits(last_logits, yes_ids, no_ids):
+    """Combine logits of all Yes / No spellings with logsumexp (a single id -> its own logit).
+    Keeps the autograd graph, so the PGD attack can use it too."""
+    logit_yes = torch.logsumexp(last_logits[yes_ids].float(), dim=0)
+    logit_no = torch.logsumexp(last_logits[no_ids].float(), dim=0)
+    return logit_yes, logit_no
 
 
 def parse_answer(output_text):
@@ -69,4 +93,4 @@ def generate_with_pixel_values(model, processor, inputs, pixel_values, max_new_t
         out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
     output_text = processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True)[0]
-    return output_text
+    return output_text
