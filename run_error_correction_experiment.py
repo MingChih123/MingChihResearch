@@ -58,6 +58,8 @@ def main():
     parser.add_argument("--min_pixels", type=int, default=256 * 28 * 28)
     parser.add_argument("--max_pixels", type=int, default=512 * 28 * 28)
     parser.add_argument("--config_name", type=str, default="")
+    parser.add_argument("--token_mode", type=str, default="nospace",
+                         help="Yes/No token spelling for logit-based steps: nospace (correct) / lse / space (old, buggy)")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -69,7 +71,7 @@ def main():
     output_path = os.path.join(
         OUTPUT_DIR,
         f"errorcorrection_{args.dataset_root}_{model_name.split('/')[-1]}_n{args.num_samples}_"
-        f"seed{args.seed}_noise{args.noise_std}"
+        f"seed{args.seed}_noise{args.noise_std}_tok{args.token_mode}"
         f"{'_' + args.config_name if args.config_name else ''}.json"
     )
 
@@ -78,7 +80,8 @@ def main():
     print(f"Output will be saved to: {output_path}", flush=True)
 
     model, processor = load_model(model_name, args.min_pixels, args.max_pixels)
-    yes_id, no_id = get_yes_no_token_ids(processor)
+    yes_id, no_id = get_yes_no_token_ids(processor, args.token_mode)
+    print(f"Token mode: {args.token_mode} | yes_ids={yes_id} no_ids={no_id}", flush=True)
 
     results = []
     overall_start = time.time()
@@ -196,4 +199,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()

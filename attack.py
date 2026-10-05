@@ -11,6 +11,8 @@ PGD 對抗攻擊:針對 VLM 即將生成的第一個 token(Yes/No)做梯度攻�
 import torch
 import random
 
+from common import yes_no_logits
+
 
 # ---------- 圖片攻擊 ----------
 
@@ -27,8 +29,8 @@ def pgd_attack_first_token(model, inputs, yes_id, no_id, epsilon, alpha, num_ste
             image_grid_thw=inputs.image_grid_thw,
         )
         last_logits = outputs.logits[0, -1, :]
-        logit_yes = last_logits[yes_id]
-        logit_no = last_logits[no_id]
+        # yes_id / no_id are lists of token ids (see common.get_yes_no_token_ids)
+        logit_yes, logit_no = yes_no_logits(last_logits, yes_id, no_id)
         loss = logit_no - logit_yes
         loss.backward()
 
@@ -98,4 +100,4 @@ def apply_text_attack(caption, attack_type="none", seed=0, corruption_rate=0.5, 
     elif attack_type == "char_swap":
         return char_swap_attack(caption, num_swaps=num_swaps, seed=seed)
     else:
-        raise ValueError(f"Unknown attack_type: {attack_type}")
+        raise ValueError(f"Unknown attack_type: {attack_type}")

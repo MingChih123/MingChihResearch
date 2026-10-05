@@ -6,7 +6,7 @@
 3. combined_defense / combined_defense_weighted: 交叉組合
 """
 import torch
-from common import build_inputs, generate_with_pixel_values, parse_answer
+from common import build_inputs, generate_with_pixel_values, parse_answer, yes_no_logits
 
 
 # ---------- 共用投票邏輯 ----------
@@ -15,13 +15,25 @@ def majority_vote(predictions):
     valid = [p for p in predictions if p in ("Yes", "No")]
     if not valid:
         return "Unclear"
-    return "Yes" if valid.count("Yes") > valid.count("No") else "No"
+    n_yes, n_no = valid.count("Yes"), valid.count("No")
+    if n_yes == n_no:
+        # Neutral tie rule (old version silently returned "No" on ties)
+        return "Unclear"
+    return "Yes" if n_yes > n_no else "No"
 
 
 def weighted_vote(answers_with_confidence):
     yes_weight = sum(c for a, c in answers_with_confidence if a == "Yes")
     no_weight = sum(c for a, c in answers_with_confidence if a == "No")
-    return "Yes" if yes_weight >= no_weight else "No"
+    if yes_weight == no_weight:
+        # Neutral tie rule (old version returned "Yes" on ties)
+        return "Unclear"
+    return "Yes" if yes_weight > no_weight else "No"
+
+
+def vote_score(answers_with_confidence):
+    """Signed total margin: >0 leans Yes, <0 leans No. Saved for later calibration analysis."""
+    return sum(c if a == "Yes" else -c for a, c in answers_with_confidence)
 
 
 @torch.no_grad()
@@ -33,8 +45,9 @@ def get_answer_with_confidence(model, processor, inputs, pixel_values, yes_id, n
         image_grid_thw=inputs.image_grid_thw,
     )
     last_logits = outputs.logits[0, -1, :]
-    logit_yes = last_logits[yes_id].item()
-    logit_no = last_logits[no_id].item()
+    # yes_id / no_id are lists of token ids (see common.get_yes_no_token_ids)
+    logit_yes, logit_no = yes_no_logits(last_logits, yes_id, no_id)
+    logit_yes, logit_no = logit_yes.item(), logit_no.item()
     confidence = abs(logit_yes - logit_no)
     answer = "Yes" if logit_yes > logit_no else "No"
     return answer, confidence
@@ -147,4 +160,4 @@ def combined_defense_weighted(model, processor, image_path, original_caption, in
                 model, processor, q_inputs, noisy_pixel_values, yes_id, no_id, max_new_tokens
             )
             results.append((answer, confidence))
-    return weighted_vote(results), results
+    return weighted_vote(results), results

@@ -5,30 +5,27 @@
 
 ---
 
-## 0. 先看這裡:最優先要查的問題
+## 0. 先看這裡:加權投票偏誤已查明(2026-10)
 
-**加權投票(weighted vote)的結果有一個沒查清楚的疑點,在動其他事情之前先處理。**
+**結論:舊的加權投票數字(恢復率 66%~100%、誤判修正 46%~54%)全部作廢,是量錯 token 造成的假象。**
 
-目前所有「加權投票大幅勝過多數決」的數字(恢復率 66%~100%)都來自「標準答案全部是 Yes」的樣本。已經看到的線索:
+`diagnose_weighted_bias.py`(FB dev,n=100 混合,seed 0)的結果:
 
-1. `verify_weighted.py` 比對 22 筆被攻擊成功的樣本,多數決與加權投票答案不同的 14 筆,**全部是同一個方向**(多數決 No、加權 Yes),沒有反向的。
-2. 誤判修正實驗(混合 Yes/No)的 50 筆小測試中,被「修正」的樣本全都是標準答案為 Yes 的;兩筆標準答案為 No、模型答成 Yes 的樣本,所有防禦都沒有修正。
-3. 誤判修正實驗(n=250,84 筆原本答錯)的修正率是 46%~54%,二元分類下亂猜期望值就是 50%,沒有明顯超過。
+- 模型生成的第一個 token 100/100 都是**不帶空格**的 `"Yes"`(9454)/ `"No"`(2753)。舊程式比的是 `" Yes"`(7414)/ `" No"`(2308),模型根本不會輸出這兩個。
+- 乾淨圖上,用 `" Yes"/" No"` 比 logit:和生成答案只有 68% 一致,Yes 比例 46%(生成只有 14%),32 筆不一致**全部**是「生成 No、logit Yes」→ 系統性偏 Yes。
+- 換成 `"Yes"/"No"`:一致率 95%,Yes 比例 15%,不一致兩個方向都有(剩下的是邊界樣本 bf16 數值差異)。logsumexp 結果幾乎一樣。
+- 攻擊後:被打成 No 的 7 筆 Yes 樣本,**完全不防禦**直接讀 `" Yes"/" No"` 就有 4 筆顯示 Yes(假的 57% 恢復率);讀 `"Yes"/"No"` 只剩 1 筆。
+- 模型本身的判斷能力沒有變:生成答案 accuracy 67%、recall 28%(12/43),模型偏向答 No。
+- PGD 攻擊與 TextFooler wrapper 也都用了錯的 token,攻擊是靠「順便」推動 `"No"` 才有效,實際強度被低估。
 
-**懷疑加權投票有偏向回答 Yes 的系統性傾向,而不是真的在修正。** 可能的來源(都還沒驗證):
+**已修正(新程式):**
+- `common.get_yes_no_token_ids(processor, mode)` 回傳 id 的 list,`mode` = `nospace`(預設、正確)/ `lse` / `space`(舊的,只用來重現舊數字)。`common.yes_no_logits` 用 logsumexp 合併。
+- `attack.py`、`defense.py`、`textattack_wrapper.py` 都改用上面兩個函式。
+- `majority_vote`、`weighted_vote` 平手一律回傳 `Unclear`(舊版多數決平手判 No、加權平手判 Yes)。
+- `run_experiment.py`、`run_error_correction_experiment.py` 加 `--token_mode`(預設 nospace),檔名帶 `tok<mode>`。
+- 新增 `run_clean_eval.py`:乾淨混合樣本,每筆都跑全部防禦,報 accuracy/F1/混淆矩陣、兩個方向分開的修正率、傷害率,並存 logit 分數供校正分析。
 
-- `defense.py::get_answer_with_confidence` 用 `" Yes"` / `" No"`(前面帶空格)的 token id 去比 logit,模型實際輸出的第一個 token 可能是不帶空格的 `"Yes"` / `"No"`。`common.py::get_yes_no_token_ids` 取的是 `processor.tokenizer(" Yes")` 的第一個 id(實測 7414 / 2308)。
-- `weighted_vote` 平手時判 Yes(`yes_weight >= no_weight`)。
-- 多數決走的是真正生成的文字(`generate`),加權走的是 logit 比較,兩者判斷依據不同。
-
-**建議的第一步診斷(尚未執行):**
-
-1. 在乾淨、混合 Yes/No 的樣本上,同一個輸入分別用「生成文字解析」和「logit 比較」得到答案,算兩者的一致率與混淆矩陣、Yes 的比例。
-2. 試不同 token 設定:`"Yes"`/`"No"`(無空格)、`" Yes"`/`" No"`(有空格),或兩者的 logsumexp,看判斷是否改變。
-3. 平手規則改成中性(例如平手回傳 Unclear 或看生成答案)。
-4. 用修正後的版本重跑:攻擊恢復率(只有 Yes 樣本)、以及**含 gt=No 樣本的整體準確率 / F1 / 混淆矩陣**。
-
-在這件事查清楚之前,**不要把加權投票的數字當成確定結論**。
+**修正後尚未重跑的:** 攻擊強度/雜訊強度掃描、乾淨評估、TextFooler。第 6 節所有「加權」欄位與攻擊成功率都要以新結果為準。多數決(走 `generate`)的防禦結果本身沒受 token 影響,但攻擊變了,也要重跑。
 
 ---
 
@@ -86,6 +83,8 @@ textattack_wrapper.py           把 VLM 包成 TextAttack 的 ModelWrapper(圖�
 test_textfooler.py              TextFooler 單樣本最小測試
 summarize_results.py            掃描 ./output/*.json 彙整成 ./output/_summary.csv
 verify_weighted.py              比對多數決與加權投票逐筆差異(要手動改檔名與欄位)
+diagnose_weighted_bias.py       P0 診斷:生成答案 vs 各種 token 的 logit 判斷
+run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + 雙向修正率 + 傷害率)
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -98,12 +97,12 @@ output/                         所有實驗結果 json
 | 像素(疊加高斯雜訊 `noise_std`,取樣 `num_noise_samples` 次) | `randomized_smoothing_defense` | `randomized_smoothing_defense_weighted` |
 | 組合(3 種問法 × `num_noise_samples//2` 次雜訊) | `combined_defense` | `combined_defense_weighted` |
 
-共用:`majority_vote`、`weighted_vote`、`get_answer_with_confidence`。信心分數 = 第一個生成 token 的 `|logit(" Yes") - logit(" No")|`;加權 = 把 Yes 陣營與 No 陣營的信心分數各自加總比大小。
+共用:`majority_vote`、`weighted_vote`、`get_answer_with_confidence`、`vote_score`。信心分數 = 第一個生成 token 的 `|logit(Yes) - logit(No)|`(token 由 `--token_mode` 決定,預設不帶空格);加權 = 把 Yes 陣營與 No 陣營的信心分數各自加總比大小。
 
 **攻擊細節:**
 
 - PGD 作用在 processor 產生的 `pixel_values`(已正規化的 patch 張量),不是 [0,1] 像素。
-- 目標:最大化第一個 token 的 `logit(No) - logit(Yes)`。
+- 目標:最大化第一個 token 的 `logit(No) - logit(Yes)`(2026-10 前用的是帶空格的錯誤 token)。
 - 預設 `epsilon=0.1, alpha=0.04, num_steps=3`。
 - 只攻擊「標準答案 Yes 且模型乾淨時也答 Yes」的樣本(`only_yes=True`)。**因此目前攻擊實驗完全沒有測到 gt=No 的方向。**
 - 指標:攻擊成功率 = 攻擊成功數 / 乾淨答對數;恢復率 = 防禦後答對數 / 攻擊成功數。
@@ -218,15 +217,13 @@ python summarize_results.py
 
 ## 8. 待辦(依優先順序)
 
-**P0 — 先確認加權投票沒有偏誤**(見第 0 節)
-- 寫診斷腳本:生成文字 vs logit 比較的一致率、混淆矩陣、Yes 比例。
-- 試不帶空格的 token、改平手規則。
-- 在混合 Yes/No 樣本上報整體 accuracy / F1 / 混淆矩陣(乾淨、攻擊後、防禦後)。
+**P0 — 加權投票偏誤**:已查明並修正(見第 0 節)。接下來用新程式重跑:
+- `run_clean_eval.py`(乾淨、混合 Yes/No:整體指標、雙向修正率、傷害率)。
+- `run_experiment.py` 攻擊實驗(攻擊現在打在正確 token 上)。
 
-**P1 — 誤判修正實驗重新分析**
-- 把 84 筆拆成兩個方向分別算修正率。
-- 加上「原本答對被防禦弄錯」的比例(傷害率)。
-- 對照 50% 亂猜基準,必要時算信賴區間。
+**P1 — 誤判修正 / train-free 校正**
+- `run_clean_eval.py` 已拆方向、算傷害率。
+- 模型偏向答 No(recall 低):用存下來的 logit 分數做 train-free 校正(在 train split 上選門檻或 contextual calibration,不動模型權重),在 dev 上評估。
 
 **P2 — 補齊既有實驗**
 - `summarize_results.py` 加 `pixel_weighted_defense_recovery_rate`。
