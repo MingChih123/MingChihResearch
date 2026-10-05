@@ -85,6 +85,7 @@ summarize_results.py            掃描 ./output/*.json 彙整成 ./output/_summa
 verify_weighted.py              比對多數決與加權投票逐筆差異(要手動改檔名與欄位)
 diagnose_weighted_bias.py       P0 診斷:生成答案 vs 各種 token 的 logit 判斷
 run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + 雙向修正率 + 傷害率)
+calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -144,6 +145,29 @@ python summarize_results.py
 ---
 
 ## 6. 已完成的實驗與數據
+
+### 6.0 修正 token 後的新結果(2026-10,token_mode=nospace,這一節才是可以引用的數字)
+
+**乾淨評估**(`run_clean_eval.py`,FB dev n=200 混合(Yes 93 / No 107),seed 0,noise 0.3,ns 5):
+
+| 方法 | acc | F1 | recall | 修正 gt=Yes | 修正 gt=No | 傷害 gt=Yes | 傷害 gt=No |
+|---|---|---|---|---|---|---|---|
+| 無防禦(generate) | 65.5% | 0.457 | 31.2% | - | - | - | - |
+| 文字(多數決) | **69.5%** | **0.573** | **44.1%** | 12/64 | 0/5 | 0/29 | 4/102 |
+| 文字(加權) | 64.5% | 0.489 | 35.5% | 9/64 | 2/5 | 5/29 | 8/102 |
+| 像素(多數決) | 64.5% | 0.423 | 28.0% | 0/64 | 2/5 | 3/29 | 1/102 |
+| 像素(加權) | 64.0% | 0.438 | 30.1% | 6/64 | 2/5 | 7/29 | 4/102 |
+| 組合(多數決) | 66.0% | 0.492 | 34.4% | 5/64 | 2/5 | 2/29 | 4/102 |
+| 組合(加權) | 64.5% | 0.466 | 33.3% | 9/64 | 2/5 | 7/29 | 6/102 |
+
+- 只有「文字(多數決)」明顯改善,而且幾乎沒有傷害。McNemar 12 vs 4,p≈0.08,n=200 還不顯著,要跑全部 500 筆。
+- 加權投票全部不比多數決好,傷害較大 → 第一個 token 的 logit 差距不是可靠的信心分數。
+- 單次 forward 的 logit 判斷和 generate 有 17/200 不一致(邊界樣本),小差距的樣本本身就不穩。
+- 組合(多數決)有 6 筆 Unclear:3 問法 × 2 雜訊 = 6 票,偶數票會平手。
+
+**圖片攻擊**(`run_experiment.py`,FB n=200 → 乾淨答對 49,eps 0.1,a 0.04,s 3,noise 0.3):
+攻擊成功 24/49(49%)。恢復率:文字 20.8%、文字加權 16.7%、像素 33.3%、像素加權 33.3%、**組合 41.7%**、組合加權 25.0%。
+
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
 
@@ -221,7 +245,7 @@ python summarize_results.py
 - `run_clean_eval.py`(乾淨、混合 Yes/No:整體指標、雙向修正率、傷害率)。
 - `run_experiment.py` 攻擊實驗(攻擊現在打在正確 token 上)。
 
-**P1 — 誤判修正 / train-free 校正**
+**P1 — 誤判修正 / train-free 校正**(`calibrate_threshold.py` 已寫好,待跑)
 - `run_clean_eval.py` 已拆方向、算傷害率。
 - 模型偏向答 No(recall 低):用存下來的 logit 分數做 train-free 校正(在 train split 上選門檻或 contextual calibration,不動模型權重),在 dev 上評估。
 
