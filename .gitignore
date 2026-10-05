@@ -1,0 +1,14 @@
+# Datasets are too large for GitHub; keep them only on the local machine
+dataset/
+
+# Images anywhere in the repo
+*.png
+*.jpg
+*.jpeg
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model / HF cache if placed in project folder
+.cache/
