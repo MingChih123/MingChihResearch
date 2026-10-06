@@ -86,6 +86,7 @@ verify_weighted.py              比對多數決與加權投票逐筆差異(要�
 diagnose_weighted_bias.py       P0 診斷:生成答案 vs 各種 token 的 logit 判斷
 run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + 雙向修正率 + 傷害率)
 calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
+ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 vs any-Yes / all-Yes
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -168,6 +169,23 @@ python summarize_results.py
 **圖片攻擊**(`run_experiment.py`,FB n=200 → 乾淨答對 49,eps 0.1,a 0.04,s 3,noise 0.3):
 攻擊成功 24/49(49%)。恢復率:文字 20.8%、文字加權 16.7%、像素 33.3%、像素加權 33.3%、**組合 41.7%**、組合加權 25.0%。
 
+
+**完整 dev(500 筆,Yes 250 / No 250,seed 0,noise 0.3,ns 5)— 目前最主要的數字:**
+
+| 方法 | acc | F1 | recall | 修正 gt=Yes | 修正 gt=No | 傷害 gt=Yes | 傷害 gt=No |
+|---|---|---|---|---|---|---|---|
+| 無防禦(generate) | 59.2% | 0.374 | 24.4% | - | - | - | - |
+| 文字(多數決) | **61.4%** | **0.453** | **32.0%** | 20/189 | 0/15 | 1/61 | 8/235 |
+| 文字(加權) | 58.8% | 0.401 | 27.2% | 18/189 | 3/15 | 11/61 | 12/235 |
+| 像素(多數決) | 57.6% | 0.329 | 20.8% | 0/189 | 3/15 | 9/61 | 2/235 |
+| 像素(加權) | 60.2% | 0.402 | 26.8% | 19/189 | 5/15 | 13/61 | 6/235 |
+| 組合(多數決) | 58.2% | 0.371 | 24.4% | 7/189 | 3/15 | 7/61 | 8/235 (11 Unclear) |
+| 組合(加權) | 58.6% | 0.382 | 25.6% | 20/189 | 3/15 | 17/61 | 9/235 |
+
+- 文字(多數決)McNemar 20 vs 9,p≈0.06(邊緣)。其他方法和無防禦沒有顯著差異。
+- 攻擊(dev 全部 250 筆 Yes → 乾淨答對 61,攻擊成功 28 = 45.9%):恢復率 文字 25.0%、文字加權 17.9%、像素 32.1%、像素加權 25.0%、**組合 46.4%(13/28,95% CI 30%~64%)**、組合加權 39.3%。
+- 門檻校正(`calibrate_threshold.py`,train 300 筆選門檻):clean_logit tau=-0.19、text_w tau=+0.31,dev 上幾乎沒改善(clean_logit_cal acc 65.0% vs 無防禦 65.5%,n=200)→ 單純調門檻沒用,Yes/No 分數本身重疊太多。
+- 待查:單次 forward 的 logit 判斷和 generate 不一致約 8%。可能原因是 generation_config 裡的 repetition_penalty(prompt 裡有 "Yes or No",兩個 token 都會被懲罰)而不只是 bf16 誤差。
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
 
