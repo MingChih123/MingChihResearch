@@ -176,6 +176,7 @@ def main():
 
     results = []
     checked_builder = False
+    n_unstable = 0
     t0 = time.time()
     for i, item in enumerate(subset):
         s0 = time.time()
@@ -208,6 +209,14 @@ def main():
             if diff > 1e-2 or not same_grid:
                 raise RuntimeError("Differentiable preprocessing does not match the processor; stop and report this.")
             checked_builder = True
+
+        if x0_pred != "Yes":
+            # Already flips from resizing/saving alone (borderline sample): not the attack's doing
+            n_unstable += 1
+            print(f"  [{i+1}/{len(subset)}] skipped (flips to {x0_pred} after resize/save, before any attack)",
+                  flush=True)
+            del inputs, x0_inputs, x0
+            continue
 
         # 3. PGD in pixel space, then quantize and save as a real PNG
         x_adv, final_gap = pgd_image_space(model, x0_inputs, builder, x0, yes_ids, no_ids,
@@ -278,8 +287,8 @@ def main():
         return sum(r["defense_preds"][key] != "Yes" for r in unflipped) / len(unflipped)
 
     summary = {
-        "n_clean_correct": n_eval,
-        "n_resized_still_yes": sum(r["clean_resized_pred"] == "Yes" for r in results),
+        "n_attacked_stable": n_eval,
+        "n_skipped_unstable_after_resize": n_unstable,
         "n_attack_success": len(attacked),
         "attack_success_rate": len(attacked) / n_eval if n_eval else None,
         "attack_success_after_jpeg_rate": len(survived) / n_eval if n_eval else None,
@@ -290,7 +299,7 @@ def main():
 
     print("\n===== Image-space attack summary =====")
     print(f"Clean-correct gt=Yes samples attacked: {n_eval} "
-          f"(still Yes after resize/save: {summary['n_resized_still_yes']})")
+          f"(skipped {n_unstable} that flipped from resize/save alone)")
     if n_eval:
         print(f"Attack success (saved PNG):          {len(attacked)}/{n_eval} ({summary['attack_success_rate']:.1%})")
         print(f"Attack success after JPEG q={args.jpeg_quality}:     {len(survived)}/{n_eval} "
