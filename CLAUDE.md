@@ -87,6 +87,7 @@ diagnose_weighted_bias.py       P0 診斷:生成答案 vs 各種 token 的 logit
 run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + 雙向修正率 + 傷害率)
 calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
 ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 vs any-Yes / all-Yes
+run_image_attack.py             真實像素空間 PGD(L-inf /255、存成 PNG 再讀回)+ JPEG 情境 + 防禦(多數決)
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -185,7 +186,25 @@ python summarize_results.py
 - 文字(多數決)McNemar 20 vs 9,p≈0.06(邊緣)。其他方法和無防禦沒有顯著差異。
 - 攻擊(dev 全部 250 筆 Yes → 乾淨答對 61,攻擊成功 28 = 45.9%):恢復率 文字 25.0%、文字加權 17.9%、像素 32.1%、像素加權 25.0%、**組合 46.4%(13/28,95% CI 30%~64%)**、組合加權 39.3%。
 - 門檻校正(`calibrate_threshold.py`,train 300 筆選門檻):clean_logit tau=-0.19、text_w tau=+0.31,dev 上幾乎沒改善(clean_logit_cal acc 65.0% vs 無防禦 65.5%,n=200)→ 單純調門檻沒用,Yes/No 分數本身重疊太多。
-- 待查:單次 forward 的 logit 判斷和 generate 不一致約 8%。可能原因是 generation_config 裡的 repetition_penalty(prompt 裡有 "Yes or No",兩個 token 都會被懲罰)而不只是 bf16 誤差。
+- 單次 forward 的 logit 判斷和 generate 不一致約 8%,原因未明(已確認 generation_config 沒有 repetition_penalty)。加權投票已決定不用,優先度低。
+
+**換問法消融**(`ablate_templates.py`,dev 500):
+
+| 規則 | acc | F1 | recall | precision |
+|---|---|---|---|---|
+| q0 原始問法 | 58.6% | 0.363 | 23.6% | 78.7% |
+| q1 | 59.4% | 0.464 | 35.2% | 68.2% |
+| q2 | **62.8%** | 0.505 | 38.0% | 75.4% |
+| 多數決 | 61.4% | 0.453 | 32.0% | 77.7% |
+| any-Yes | 61.4% | **0.537** | **44.8%** | 67.1% |
+| all-Yes | 58.0% | 0.323 | 20.0% | 83.3% |
+
+- **q2 單獨就比多數決好 → 文字防禦的乾淨增益主要來自比較好的問法,不是投票。** 不能再說「投票提升準確率」。
+- any-Yes(任一問法說 Yes 就送人工審核)recall/F1 最高,符合審核情境。
+- 注意:這是在 dev 上比較出來的,要選規則/問法必須在 train 上選,dev 只報最終結果。
+
+**目前決定(2026-10-06):** 放棄加權投票與門檻校正;下一步先把攻擊改成真實的像素空間攻擊(`run_image_attack.py`)。
+
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
 
