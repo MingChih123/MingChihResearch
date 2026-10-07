@@ -88,6 +88,8 @@ run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + �
 calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
 ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 vs any-Yes / all-Yes
 run_image_attack.py             真實像素空間 PGD(L-inf /255、存成 PNG 再讀回)+ JPEG 情境 + 防禦(多數決)
+run_robust_suite.py             攻擊組合(pgd / pgd_jpeg / saltpepper / spread)× 防禦組合(含新的 transform、tq),--clean_only 量正常圖副作用
+summarize_all.py                把 output 裡新實驗的結果整理成 _table_*.csv
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -211,6 +213,12 @@ python summarize_results.py
 - 恢復率(36 筆):**JPEG 55.6%**、any-Yes 44.4%、雜訊 36.1%、組合 33.3%、換問法多數決 8.3%。攻擊沒翻掉的 22 筆:只有組合傷害 1 筆(4.5%)。
 - **結論:最簡單的 JPEG baseline 目前贏過所有我們的防禦。** 下一步:JPEG-aware 攻擊(EOT)、JPEG + 我們防禦的組合與乾淨圖副作用、在 train 上選問法/規則、評估更強模型。
 - 進度報告簡報(3 頁,2026-10 週四):https://claude.ai/artifact/TsBgSDZ3Ea6F7QAGskRHYS
+
+**下一階段計畫(2026-10-07):**
+1. `run_robust_suite.py` 先在 train 上跑(開發用),找出各防禦在哪種攻擊下失效;最終結果才在 dev 上報。
+2. 新防禦:transform(5 種圖片轉換 + 多數決)、tq(5 轉換 × 3 問法;tq_majority / tq_anyq),投票不一致 → 送人工審核。
+3. pgd_jpeg(BPDA 直通 JPEG)是「會撐過 JPEG」的攻擊;之後再做「知道防禦方式」的 adaptive 攻擊(EOT over transforms)。
+4. 相關論文:HateProof(WWW'23,SaltPepper/Spread/文字攻擊經 OCR)、RA-HMD(EMNLP'25,Qwen2-VL-2B zero-shot HatefulMemes acc 54.2%)、Meme Trojan(AAAI'25,後門)、Mitigating...MULTILATE(未審查 preprint)。這四篇的防禦都要訓練;本研究是 training-free。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
