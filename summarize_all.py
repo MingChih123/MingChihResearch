@@ -9,6 +9,8 @@
   _table_imgattack.csv  run_image_attack.py:真實圖片攻擊的成功率與各防禦救回比例
   _table_pipeline.csv   乾淨 → 被攻擊 → 加防禦,在整個 dev 上的 accuracy / recall / F1
                         (需要同一資料集的 cleaneval 全量檔 + imgattack 檔)
+  _table_robust_attack.csv  run_robust_suite.py 攻擊模式:每種攻擊下,各防禦還能認出幾 % 的仇恨迷因
+  _table_robust_clean.csv   run_robust_suite.py --clean_only:各防禦在正常圖片上的表現與副作用
 
 用法(CMD):
   python summarize_all.py
@@ -145,6 +147,37 @@ def pipeline_tables(clean_files, attack_files):
     return rows
 
 
+def robust_attack_tables(files):
+    rows = []
+    for path in files:
+        d = load(path)
+        n = len(d["results"])
+        for atk, r in d["summary"].get("table", {}).items():
+            row = {"file": os.path.basename(path), "attacked_memes": n, "attack": atk,
+                   "attack_success": pct(r.get("attack_success_rate"))}
+            for k, v in r.items():
+                if k not in ("attack_success_rate", "tq_flag_for_review_rate"):
+                    row[f"still_detected_{k}"] = pct(v)
+            if "tq_flag_for_review_rate" in r:
+                row["tq_flag_for_review"] = pct(r["tq_flag_for_review_rate"])
+            rows.append(row)
+    return rows
+
+
+def robust_clean_tables(files):
+    rows = []
+    for path in files:
+        d = load(path)
+        s = d["summary"]
+        for k, m in s.get("metrics", {}).items():
+            rows.append({"file": os.path.basename(path), "n": m["n"], "defense": k,
+                         "accuracy": pct(m["accuracy"]), "recall": pct(m["recall"]), "f1": round(m["f1"], 3),
+                         "TP": m["TP"], "FN": m["FN"], "FP": m["FP"], "TN": m["TN"],
+                         "fixed": m.get("fixed", ""), "harmed": m.get("harmed", ""),
+                         "tq_flag_for_review": pct(s.get("tq_flag_for_review_rate"))})
+    return rows
+
+
 def main():
     clean_files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "cleaneval_*.json")))
     ablation_files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "ablate_templates_*.json")))
@@ -154,6 +187,10 @@ def main():
     write_csv("_table_clean.csv", clean_tables(clean_files))
     write_csv("_table_ablation.csv", ablation_tables(ablation_files))
     write_csv("_table_imgattack.csv", imgattack_tables(attack_files))
+    write_csv("_table_robust_attack.csv",
+              robust_attack_tables(sorted(glob.glob(os.path.join(OUTPUT_DIR, "robust_attack_*.json")))))
+    write_csv("_table_robust_clean.csv",
+              robust_clean_tables(sorted(glob.glob(os.path.join(OUTPUT_DIR, "robust_clean_*.json")))))
     pipe = pipeline_tables(clean_files, attack_files)
     write_csv("_table_pipeline.csv", pipe)
 
