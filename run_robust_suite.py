@@ -12,6 +12,8 @@
   pgd_jpeg    會撐過 JPEG 的梯度攻擊:每一步先把圖做 JPEG 壓縮再算梯度(BPDA 直通估計)
   saltpepper  椒鹽雜訊:隨機把一部分像素變成黑或白(參考 HateProof 的 SaltPepper-I)
   spread      像素擾動:每個像素和附近隨機一個像素交換位置(參考 HateProof 的 Spread)
+  pgd_eot     【知道防禦方式的攻擊】攻擊者知道 3 個問法和 5 種圖片轉換,每一步把它們都考慮進去
+              (預設不跑,要用 --attacks 指定;比 pgd 慢約 3 倍)
   (saltpepper / spread 的強度是我們自己設定的近似值,HateProof 用 GIMP 做,沒有給確切參數)
 
 防禦(--defenses,用逗號分隔):
@@ -53,7 +55,8 @@ from run_image_attack import (PixelValuesBuilder, pil_to_tensor, tensor_to_pil, 
                               pgd_image_space, extract_caption)
 
 OUTPUT_DIR = "./output"
-ALL_ATTACKS = ["pgd", "pgd_jpeg", "saltpepper", "spread"]
+DEFAULT_ATTACKS = ["pgd", "pgd_jpeg", "saltpepper", "spread"]
+ALL_ATTACKS = DEFAULT_ATTACKS + ["pgd_eot"]
 ALL_DEFENSES = ["none", "jpeg", "text", "text_anyyes", "noise", "transform", "tq"]
 
 # Image transformations used by the transform / tq defenses (odd count -> no ties)
@@ -107,6 +110,42 @@ def pgd_jpeg_aware(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, step
         delta = delta.detach()
         del outputs, logit_yes, logit_no, loss, grad
         torch.cuda.empty_cache()
+    return (x0 + delta).clamp(0, 1).detach(), gap
+
+
+def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms):
+    """Adaptive attack against the tq defense: the attacker knows the 3 questions and the
+    image transformations. Each step sums the loss over all questions, each seen through
+    a different transformation (or none); transformations use BPDA (identity backward)."""
+    names = [None] + list(transforms)  # None = untransformed image
+    delta = torch.zeros_like(x0)
+    gap = None
+    for step in range(steps):
+        delta.requires_grad_(True)
+        total = 0.0
+        for qi, inputs in enumerate(inputs_per_q):
+            x = (x0 + delta).clamp(0, 1)
+            name = names[(step * len(inputs_per_q) + qi) % len(names)]
+            if name is not None:
+                xt = pil_to_tensor(transforms[name](tensor_to_pil(x.detach())), x.device)
+                x = x + (xt - x).detach()  # straight-through
+            outputs = model(input_ids=inputs.input_ids, attention_mask=inputs.attention_mask,
+                            pixel_values=builder(x), image_grid_thw=inputs.image_grid_thw)
+            logit_yes, logit_no = yes_no_logits(outputs.logits[0, -1, :], yes_ids, no_ids)
+            loss = logit_no - logit_yes
+            loss.backward()  # gradients accumulate in delta.grad; frees this graph
+            total += loss.item()
+            del outputs, logit_yes, logit_no, loss
+            torch.cuda.empty_cache()
+        grad = delta.grad
+        gap = total / len(inputs_per_q)
+        if grad is None:
+            break
+        with torch.no_grad():
+            delta = delta + alpha * grad.sign()
+            delta = delta.clamp(-eps, eps)
+            delta = (x0 + delta).clamp(0, 1) - x0
+        delta = delta.detach()
     return (x0 + delta).clamp(0, 1).detach(), gap
 
 
@@ -227,7 +266,8 @@ def main():
                         help="attack mode: number of gt=Yes memes to scan; clean mode: mixed memes")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--clean_only", action="store_true", help="no attack; mixed Yes/No; measure side effects")
-    parser.add_argument("--attacks", type=str, default=",".join(ALL_ATTACKS))
+    parser.add_argument("--attacks", type=str, default=",".join(DEFAULT_ATTACKS),
+                        help="add pgd_eot for the adaptive attack that knows the tq defense")
     parser.add_argument("--defenses", type=str, default=",".join(ALL_DEFENSES))
     parser.add_argument("--eps", type=float, default=8.0, help="PGD L-inf budget in /255")
     parser.add_argument("--alpha", type=float, default=2.0, help="PGD step in /255")
@@ -261,6 +301,8 @@ def main():
     ds_tag = os.path.basename(os.path.normpath(args.dataset_root))
     tag = (f"robust_{mode}_{ds_tag}_{split}_{model_name.split('/')[-1]}_n{args.num_samples}_seed{args.seed}"
            + ("" if args.clean_only else f"_eps{args.eps:g}_s{args.num_steps}")
+           # Non-default attack sets get their own file so earlier results are never overwritten
+           + ("" if args.clean_only or attacks == DEFAULT_ATTACKS else "_atk-" + "-".join(attacks))
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
@@ -335,6 +377,13 @@ def main():
                 xa, _ = pgd_jpeg_aware(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
                                        args.num_steps, args.jpeg_quality)
                 adv = tensor_to_pil(xa)
+            elif atk == "pgd_eot":
+                q_inputs = [build_inputs(processor, x0_path, q, model.device)
+                            for q in make_paraphrase_questions(caption)]
+                xa, _ = pgd_eot_adaptive(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
+                                         args.num_steps, TRANSFORMS)
+                adv = tensor_to_pil(xa)
+                del q_inputs
             elif atk == "saltpepper":
                 adv = salt_pepper(x0_pil, args.saltpepper_amount, np_rng)
             else:
