@@ -250,7 +250,12 @@ python summarize_results.py
 - tq 15 票不一致比例:乾淨 29%、pgd 38%、pgd_jpeg 52% → 攻擊會讓投票更不一致,可能可以當偵測訊號,但乾淨圖就有 29%,直接送人工太多。
 - 在 dev 上「文字多數決」比不防禦好(61.4 vs 59.2),但這裡 train 200 筆反而比較差(67.0 vs 69.5)→ 小幅差異不穩定,不要過度解讀。
 - 樣本數:71 筆攻擊,單一比例的 95% 信賴區間約 ±10%。
-- 下一步:`--attacks pgd_eot`(知道 3 問法 + 5 轉換的 adaptive 攻擊)在 train 上測 tq 是否仍撐得住;之後在 dev 上報最終結果,再做 HarMeme。
+**Adaptive 攻擊 pgd_eot(知道 3 問法 + 5 轉換;同樣 71 筆,2026-10-12):** 攻擊成功 39.4%;仍認出比例:none 60.6%、jpeg 67.6%、text 70.4%、text_anyyes 76.1%、noise 71.8%、transform 67.6%、tq_majority 73.2%、**tq_anyq 81.7%**。
+- tq 在專門針對它的攻擊下有下降(tq_majority 85.9 → 73.2、tq_anyq 90.1 → 81.7),但仍高於不防禦(60.6)。
+- 公平比較 = 每個防禦對上「知道它的攻擊」:JPEG vs pgd_jpeg 50.7%;tq_majority vs pgd_eot 73.2%;tq_anyq vs pgd_eot 81.7%;不防禦 vs pgd 53.5%。
+- 注意:pgd_eot 只針對 tq 設計,其他防禦(noise、text)在這一列沒有被針對,數字偏樂觀。
+- 只看仇恨迷因的「仍認出比例」會偏好容易說 Yes 的規則(anyq),要搭配乾淨模式的誤判率一起看:正常迷因誤判率 none 10%、jpeg 15%、tq_majority 14%、tq_anyq 27%。
+- 下一步:在 dev 上跑最終結果(攻擊模式含 pgd_eot + 乾淨模式),再做 HarMeme。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
