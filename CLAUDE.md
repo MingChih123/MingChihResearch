@@ -88,7 +88,7 @@ run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + �
 calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
 ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 vs any-Yes / all-Yes
 run_image_attack.py             真實像素空間 PGD(L-inf /255、存成 PNG 再讀回)+ JPEG 情境 + 防禦(多數決)
-run_robust_suite.py             攻擊組合(pgd / pgd_jpeg / saltpepper / spread)× 防禦組合(含新的 transform、tq),--clean_only 量正常圖副作用
+run_robust_suite.py             攻擊組合(pgd / pgd_jpeg / saltpepper / spread,另可加 pgd_eot)× 防禦組合(含新的 transform、tq),--clean_only 量正常圖副作用
 summarize_all.py                把 output 裡新實驗的結果整理成 _table_*.csv
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
@@ -219,6 +219,38 @@ python summarize_results.py
 2. 新防禦:transform(5 種圖片轉換 + 多數決)、tq(5 轉換 × 3 問法;tq_majority / tq_anyq),投票不一致 → 送人工審核。
 3. pgd_jpeg(BPDA 直通 JPEG)是「會撐過 JPEG」的攻擊;之後再做「知道防禦方式」的 adaptive 攻擊(EOT over transforms)。
 4. 相關論文:HateProof(WWW'23,SaltPepper/Spread/文字攻擊經 OCR)、RA-HMD(EMNLP'25,Qwen2-VL-2B zero-shot HatefulMemes acc 54.2%)、Meme Trojan(AAAI'25,後門)、Mitigating...MULTILATE(未審查 preprint)。這四篇的防禦都要訓練;本研究是 training-free。
+
+**攻擊組合 × 防禦組合(`run_robust_suite.py`,FB train,開發用,2026-10-08):**
+
+攻擊模式(150 筆 Yes → 模型原本答對 71 筆;數字 = 攻擊後仍認出是仇恨的比例,越高越好):
+
+| 攻擊 | 攻擊成功 | none | jpeg | text | text_anyyes | noise | transform | tq_majority | tq_anyq |
+|---|---|---|---|---|---|---|---|---|---|
+| pgd | 46.5% | 53.5% | 76.1% | 63.4% | 74.6% | 73.2% | 83.1% | 85.9% | **90.1%** |
+| pgd_jpeg | 32.4% | 67.6% | **50.7%** | 77.5% | 80.3% | 73.2% | 67.6% | 80.3% | **85.9%** |
+| saltpepper | 2.8% | 97.2% | 98.6% | 93.0% | 98.6% | 97.2% | 98.6% | 95.8% | 98.6% |
+| spread | 19.7% | 80.3% | 74.6% | 76.1% | 88.7% | 73.2% | 83.1% | 80.3% | **90.1%** |
+
+乾淨模式(200 筆混合:Yes 73 / No 127,不攻擊):
+
+| 防禦 | acc | recall | F1 | FP | fixed | harmed |
+|---|---|---|---|---|---|---|
+| none | 69.5% | 34.2% | 0.450 | 13 | - | - |
+| jpeg | 68.5% | 39.7% | 0.479 | 19 | 6 | 8 |
+| text | 67.0% | 35.6% | 0.441 | 19 | 2 | 7 |
+| text_anyyes | 67.0% | 57.5% | 0.560 | 35 | 17 | 22 |
+| noise | 69.0% | 32.9% | 0.436 | 13 | 1 | 2 |
+| transform | 69.0% | 35.6% | 0.456 | 15 | 1 | 2 |
+| tq_majority | 69.5% | 41.1% | 0.496 | 18 | 6 | 6 |
+| tq_anyq | 66.0% | 53.4% | 0.534 | 34 | 14 | 21 |
+
+- **tq_anyq 在四種攻擊下都最好**;tq_majority 次之,而且乾淨圖準確率不掉(69.5% = none)、recall +7。
+- **JPEG 在 pgd_jpeg 下失效**:50.7%,比不防禦(67.6%)還差 → JPEG baseline 擋不住知道會被壓縮的攻擊者。transform 含 JPEG 轉換,在 pgd_jpeg 下也掉到 67.6%。
+- 代價:tq_anyq 乾淨圖 FP 13 → 34(正常迷因誤判率 10% → 27%);tq 每張圖要問 15 次。
+- tq 15 票不一致比例:乾淨 29%、pgd 38%、pgd_jpeg 52% → 攻擊會讓投票更不一致,可能可以當偵測訊號,但乾淨圖就有 29%,直接送人工太多。
+- 在 dev 上「文字多數決」比不防禦好(61.4 vs 59.2),但這裡 train 200 筆反而比較差(67.0 vs 69.5)→ 小幅差異不穩定,不要過度解讀。
+- 樣本數:71 筆攻擊,單一比例的 95% 信賴區間約 ±10%。
+- 下一步:`--attacks pgd_eot`(知道 3 問法 + 5 轉換的 adaptive 攻擊)在 train 上測 tq 是否仍撐得住;之後在 dev 上報最終結果,再做 HarMeme。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
