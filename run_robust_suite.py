@@ -79,15 +79,22 @@ def set_seed(seed):
 
 # ---------------- attacks ----------------
 
+def random_init(x0, eps, seed):
+    """Uniform random start in the L-inf ball (kept inside the valid pixel range), reproducible per seed."""
+    g = torch.Generator().manual_seed(seed)
+    d = (torch.rand(x0.shape, generator=g) * 2 - 1) * eps
+    return ((x0 + d.to(x0.device)).clamp(0, 1) - x0).detach()
+
+
 def jpeg_tensor(x, quality):
     """Real (non-differentiable) JPEG of a (3,H,W) [0,1] tensor."""
     return pil_to_tensor(jpeg_reencode(tensor_to_pil(x), quality), x.device)
 
 
-def pgd_jpeg_aware(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, steps, quality):
+def pgd_jpeg_aware(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, steps, quality, init_delta=None):
     """PGD through a JPEG step using BPDA: forward uses the real JPEG output,
     backward treats JPEG as identity. The result is meant to survive re-compression."""
-    delta = torch.zeros_like(x0)
+    delta = torch.zeros_like(x0) if init_delta is None else init_delta.clone()
     gap = None
     for _ in range(steps):
         delta.requires_grad_(True)
@@ -114,13 +121,13 @@ def pgd_jpeg_aware(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, step
 
 
 def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms,
-                     include_identity=True):
+                     include_identity=True, init_delta=None):
     """Adaptive attack against the tq defense: the attacker knows the 3 questions and the
     image transformations. Each step sums the loss over all questions, each seen through
     a different transformation (or none); transformations use BPDA (identity backward)."""
     # None = untransformed image; without it the whole budget goes to the views the defense uses
     names = ([None] if include_identity else []) + list(transforms)
-    delta = torch.zeros_like(x0)
+    delta = torch.zeros_like(x0) if init_delta is None else init_delta.clone()
     gap = None
     for step in range(steps):
         delta.requires_grad_(True)
@@ -181,7 +188,7 @@ def run_defenses(model, processor, img_path, question, caption, defenses, args, 
                  transforms=None):
     """Returns {defense_name: prediction} plus vote details for one image file."""
     preds, votes = {}, {}
-    questions = make_paraphrase_questions(caption)
+    questions = make_paraphrase_questions(caption, args.template_set, question)
 
     if "none" in defenses:
         preds["none"] = predict_path(model, processor, img_path, question, args.max_new_tokens)
@@ -276,6 +283,10 @@ def main():
                         help="transformations used by the transform / tq defenses and by pgd_eot, e.g. resize50")
     parser.add_argument("--eot_defense_only", action="store_true",
                         help="pgd_eot spends its whole budget on the defense's transformed views (no raw image)")
+    parser.add_argument("--template_set", type=str, default="auto",
+                        help="question templates: FB / HarMeme / auto (HarMeme if the dataset name contains it)")
+    parser.add_argument("--random_start", action="store_true",
+                        help="PGD attacks start from a random point (seeded by --seed), so different seeds differ")
     parser.add_argument("--eps", type=float, default=8.0, help="PGD L-inf budget in /255")
     parser.add_argument("--alpha", type=float, default=2.0, help="PGD step in /255")
     parser.add_argument("--num_steps", type=int, default=10)
@@ -298,6 +309,8 @@ def main():
     for d in defenses:
         assert d in ALL_DEFENSES, f"unknown defense {d}"
     keys = defense_keys(defenses)
+    if args.template_set == "auto":
+        args.template_set = "HarMeme" if "harmeme" in args.dataset_root.lower() else "FB"
     tq_names = [t for t in args.tq_transforms.split(",") if t]
     for t in tq_names:
         assert t in TRANSFORMS, f"unknown transform {t} (choose from {list(TRANSFORMS)})"
@@ -316,6 +329,7 @@ def main():
            + ("" if args.clean_only or attacks == DEFAULT_ATTACKS else "_atk-" + "-".join(attacks))
            + ("" if tq_names == list(TRANSFORMS) else "_tq-" + "-".join(tq_names))
            + ("_eotdef" if args.eot_defense_only and not args.clean_only else "")
+           + ("_rs" if args.random_start and not args.clean_only else "")
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
@@ -331,7 +345,7 @@ def main():
     print(f"Mode: {mode} | {len(subset)} samples from {data_file} | gt counts {dict(Counter(d['answer'] for d in subset))}")
     if not args.clean_only:
         print(f"Attacks: {attacks}")
-    print(f"Defenses: {keys}\nOutput: {output_path}", flush=True)
+    print(f"Defenses: {keys}\nTemplates: {args.template_set}\nOutput: {output_path}", flush=True)
 
     model, processor = load_model(model_name, args.min_pixels, args.max_pixels)
     yes_ids, no_ids = get_yes_no_token_ids(processor, args.token_mode)
@@ -383,20 +397,22 @@ def main():
         x0_inputs = build_inputs(processor, x0_path, question, model.device)
         rec["attacks"] = {}
         line = []
-        for atk in attacks:
+        for ai, atk in enumerate(attacks):
+            init = random_init(x0, eps, args.seed * 100003 + i * 101 + ai) if args.random_start else None
             if atk == "pgd":
-                xa, _ = pgd_image_space(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha, args.num_steps)
+                xa, _ = pgd_image_space(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha, args.num_steps,
+                                        init_delta=init)
                 adv = tensor_to_pil(xa)
             elif atk == "pgd_jpeg":
                 xa, _ = pgd_jpeg_aware(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
-                                       args.num_steps, args.jpeg_quality)
+                                       args.num_steps, args.jpeg_quality, init_delta=init)
                 adv = tensor_to_pil(xa)
             elif atk == "pgd_eot":
                 q_inputs = [build_inputs(processor, x0_path, q, model.device)
-                            for q in make_paraphrase_questions(caption)]
+                            for q in make_paraphrase_questions(caption, args.template_set, question)]
                 xa, _ = pgd_eot_adaptive(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
                                          args.num_steps, active_transforms,
-                                         include_identity=not args.eot_defense_only)
+                                         include_identity=not args.eot_defense_only, init_delta=init)
                 adv = tensor_to_pil(xa)
                 del q_inputs
             elif atk == "saltpepper":

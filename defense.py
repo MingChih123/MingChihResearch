@@ -55,7 +55,27 @@ def get_answer_with_confidence(model, processor, inputs, pixel_values, yes_id, n
 
 # ---------- 文字層防禦 ----------
 
-def make_paraphrase_questions(base_caption):
+# HarMeme asks about "hateful or harmful" content toward "a group or individual";
+# q0 is the dataset's own question, q1 / q2 are rewrites in the same spirit as the FB ones.
+HARMEME_TEMPLATES = [
+    'Looking at this meme, which has the text "{caption}", would you say it is '
+    'hateful or harmful toward any particular group of people or individual? '
+    'Answer only Yes or No.',
+
+    'This meme is captioned "{caption}". Is this meme offensive, harmful or '
+    'discriminatory toward a specific group or person? Answer only Yes or No.',
+]
+
+
+def make_paraphrase_questions(base_caption, template_set="FB", original_question=None):
+    """3 questions for the paraphrase defenses.
+    template_set="FB" (default, unchanged); "HarMeme" uses the dataset's own question as q0."""
+    if template_set == "HarMeme":
+        if original_question is None:
+            original_question = (f'Given the meme image with the caption "{base_caption}", does this meme '
+                                 'contain hateful or harmful content targeting a specific group or individual? '
+                                 'Answer only Yes or No.')
+        return [original_question] + [t.format(caption=base_caption) for t in HARMEME_TEMPLATES]
     templates = [
         'Given the meme image with the caption "{caption}", does this meme contain '
         'hateful content targeting a specific group (e.g. race, religion, gender, '
