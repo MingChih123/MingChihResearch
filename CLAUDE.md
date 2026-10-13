@@ -309,6 +309,30 @@ python summarize_results.py
   `python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd_eot --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq`
 - `run_robust_suite.py` 新參數:`--tq_transforms`(tq / transform / pgd_eot 用哪些轉換)、`--eot_defense_only`(pgd_eot 只打防禦看得到的轉換版本)。
 
+**resize-only 版本的專門攻擊(dev 59 筆,`--attacks pgd_eot --tq_transforms resize50 --eot_defense_only`,2026-10-13):**
+攻擊成功(對不防禦)49.2%;仍認出:none 50.8%、jpeg 66.1%、text 52.5%、text_anyyes 76.3%、tq_majority(resize×3 多數決)50.8%、**tq_anyq(resize×3 any)76.3%**。(noise / transform 沒跑所以 CSV 是空白。)
+- resize-only tq_anyq 被專門攻擊後 76.3%,和 15 次版本被它的 adaptive 攻擊後 78.0% 差不多 → **3 次版本一樣強健,成本 1/5,定為主方法。**
+- 這一列的 text_anyyes(76.3%)不能拿來比:攻擊只優化「縮小後」的圖,原圖沒有被針對,所以 text_anyyes 偏樂觀。
+- tq_majority 在專門攻擊下 = 不防禦(50.8%)→ 多數決規則不夠,要用 any 規則。
+- 小差異:15 次版本的 pgd_eot 有混入原圖(沒用 --eot_defense_only),攻擊稍弱;要完全公平可以用 --eot_defense_only 重跑 15 次版本(選做)。
+
+**主方法(暫定名稱 Resize-and-Rephrase):把圖縮小一半再放大 → 用 3 個問法各問一次 → 任一說 Yes 就標記。每張圖 3 次查詢、不訓練。**
+
+dev 主表(仍認出比例 / 乾淨圖):
+
+| | 不防禦 | JPEG | 換問法 any-Yes | 主方法(3 次) |
+|---|---|---|---|---|
+| 乾淨 acc | 59.2% | 58.8% | 62.0% | **64.4%** |
+| 乾淨 recall | 23.6% | 24.0% | 45.6% | **50.0%** |
+| 正常迷因誤判率 | 5.2% | 6.4% | 21.6% | 21.2% |
+| pgd | 39.0% | 64.4% | 66.1% | **96.6%** |
+| pgd_jpeg | 44.1% | 40.7% | 76.3% | **91.5%** |
+| 針對自己的攻擊 | 39.0%(pgd) | 40.7%(pgd_jpeg) | 未測 | **76.3%**(pgd_eot,只針對 resize) |
+| saltpepper | 88.1% | 86.4% | 100% | 100% |
+| spread | 71.2% | 78.0% | 89.8% | **93.2%** |
+
+- 未做(選做):針對「換問法 any-Yes」本身的 adaptive 攻擊(EOT 只對 3 個問法、原圖)。
+
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
 
