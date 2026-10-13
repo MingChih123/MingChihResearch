@@ -90,6 +90,7 @@ ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 
 run_image_attack.py             真實像素空間 PGD(L-inf /255、存成 PNG 再讀回)+ JPEG 情境 + 防禦(多數決)
 run_robust_suite.py             攻擊組合(pgd / pgd_jpeg / saltpepper / spread,另可加 pgd_eot)× 防禦組合(含新的 transform、tq),--clean_only 量正常圖副作用
 summarize_all.py                把 output 裡新實驗的結果整理成 _table_*.csv
+analyze_robust.py               robust suite 結果的 McNemar 顯著性、95% CI、用存下來的投票做「少問幾次」的成本消融
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
 output/                         所有實驗結果 json
 ```
@@ -256,6 +257,40 @@ python summarize_results.py
 - 注意:pgd_eot 只針對 tq 設計,其他防禦(noise、text)在這一列沒有被針對,數字偏樂觀。
 - 只看仇恨迷因的「仍認出比例」會偏好容易說 Yes 的規則(anyq),要搭配乾淨模式的誤判率一起看:正常迷因誤判率 none 10%、jpeg 15%、tq_majority 14%、tq_anyq 27%。
 - 下一步:在 dev 上跑最終結果(攻擊模式含 pgd_eot + 乾淨模式),再做 HarMeme。
+
+**★ dev 最終結果(`run_robust_suite.py`,FB dev 全部,2026-10-13)— 論文主要數字:**
+
+攻擊模式(250 筆 Yes → 模型原本答對且縮放後仍答對 59 筆;仍認出比例,越高越好):
+
+| 攻擊 | 攻擊成功 | none | jpeg | text | text_anyyes | noise | transform | tq_majority | tq_anyq |
+|---|---|---|---|---|---|---|---|---|---|
+| pgd | 61.0% | 39.0% | 64.4% | 42.4% | 66.1% | 59.3% | 71.2% | 74.6% | **96.6%** |
+| pgd_jpeg | 55.9% | 44.1% | 40.7% | 49.2% | 76.3% | 55.9% | 55.9% | 57.6% | **89.8%** |
+| pgd_eot | 57.6% | 42.4% | 61.0% | 42.4% | 64.4% | 55.9% | 50.8% | 49.2% | **78.0%** |
+| saltpepper | 11.9% | 88.1% | 86.4% | 91.5% | 100% | 88.1% | 88.1% | 93.2% | 100% |
+| spread | 28.8% | 71.2% | 78.0% | 74.6% | 89.8% | 83.1% | 78.0% | 81.4% | 89.8% |
+
+乾淨模式(dev 500:Yes 250 / No 250):
+
+| 防禦 | acc | recall | F1 | FP(/250) | fixed | harmed |
+|---|---|---|---|---|---|---|
+| none | 59.2% | 23.6% | 0.366 | 13 | - | - |
+| jpeg | 58.8% | 24.0% | 0.368 | 16 | 10 | 12 |
+| text | 61.0% | 30.4% | 0.438 | 21 | 18 | 9 |
+| text_anyyes | 62.0% | 45.6% | 0.545 | 54 | 55 | 41 |
+| noise | 57.8% | 20.8% | 0.330 | 13 | 5 | 12 |
+| transform | 59.6% | 25.2% | 0.384 | 15 | 9 | 7 |
+| tq_majority | 60.2% | 28.8% | 0.420 | 21 | 18 | 13 |
+| tq_anyq | **62.8%** | **47.2%** | **0.559** | 54 | 59 | 41 |
+
+- **tq_anyq 在每種攻擊下都最好,而且乾淨圖準確率 / F1 也最高。** 在 dev(仇恨:正常 = 1:1)上 recall 提升抵過誤判增加;train(仇恨約 36%)上 tq_anyq 準確率反而略降 → 結果受類別比例影響,論文要說明。
+- **tq_anyq 和 text_anyyes 的乾淨圖誤判數完全一樣(54/250 = 21.6%)**,但攻擊下 tq_anyq 強很多(pgd 96.6 vs 66.1、pgd_jpeg 89.8 vs 76.3、pgd_eot 78.0 vs 64.4)→ 同樣的誤判成本,圖片轉換帶來額外的強健性。
+- 消融(各元件都有貢獻):只有轉換(transform)pgd 71.2 / pgd_eot 50.8;只有問法 any-Yes 66.1 / 64.4;兩者合起來 tq_anyq 96.6 / 78.0。
+- **tq_majority 在 dev 上撐不住 adaptive 攻擊**:pgd_eot 只剩 49.2%,和不防禦(42.4%)差不多(train 是 73.2%)→ 主推 tq_anyq,tq_majority 當作對照。
+- **JPEG 在 pgd_jpeg 下再次失效**(40.7% < 不防禦 44.1%),和 train 一致。
+- dev 上攻擊比 train 強(pgd 成功 61% vs 46.5%)。
+- 代價:tq_anyq 正常迷因誤判率 5.2% → 21.6%、每張圖問 15 次。
+- 顯著性與成本消融:`analyze_robust.py`(用存下來的投票重算,不用 GPU)。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
