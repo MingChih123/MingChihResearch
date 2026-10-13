@@ -91,9 +91,10 @@ def jpeg_reencode(img, quality):
     return Image.open(buf).convert("RGB")
 
 
-def pgd_image_space(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, steps):
-    """L-inf PGD on raw pixels in [0,1]. Maximizes logit(No) - logit(Yes) of the first token."""
-    delta = torch.zeros_like(x0)
+def pgd_image_space(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, steps, init_delta=None):
+    """L-inf PGD on raw pixels in [0,1]. Maximizes logit(No) - logit(Yes) of the first token.
+    init_delta: optional starting perturbation (random start); default starts from zero."""
+    delta = torch.zeros_like(x0) if init_delta is None else init_delta.clone()
     gap = None
     for _ in range(steps):
         delta.requires_grad_(True)

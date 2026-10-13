@@ -71,28 +71,27 @@
 ## 4. 程式結構
 
 ```
-config.py                       資料集路徑、預設資料檔、模型別名(qwen2b / qwen7b)
-common.py                       載入模型、build_inputs、generate_with_pixel_values、parse_answer、get_yes_no_token_ids
-attack.py                       pgd_attack_first_token(圖片)、leetspeak / char_swap / apply_text_attack(文字)
-defense.py                      三類防禦,各有多數決與加權兩版(見下)
-run_experiment.py               主實驗:抽樣 → 乾淨預測 → 攻擊 → 六種防禦 → 統計 → 存 json
-clean_control_check.py          乾淨圖片套防禦,看會不會把原本答對的弄錯(尚未更新加權版)
-run_error_correction_experiment.py   沒有攻擊,抓模型本來答錯的樣本,測防禦能不能修正
-run_textfooler_experiment.py    TextFooler 文字攻擊(多樣本)
-textattack_wrapper.py           把 VLM 包成 TextAttack 的 ModelWrapper(圖固定,換文字)
-test_textfooler.py              TextFooler 單樣本最小測試
-summarize_results.py            掃描 ./output/*.json 彙整成 ./output/_summary.csv
-verify_weighted.py              比對多數決與加權投票逐筆差異(要手動改檔名與欄位)
-diagnose_weighted_bias.py       P0 診斷:生成答案 vs 各種 token 的 logit 判斷
-run_clean_eval.py               乾淨混合樣本完整評估(整體指標 + 雙向修正率 + 傷害率)
-calibrate_threshold.py          train-free 門檻校正:在 train split 選門檻,套到 run_clean_eval 存好的 dev 分數
-ablate_templates.py             換問法消融:每個問法單獨 vs 多數決 vs any-Yes / all-Yes
-run_image_attack.py             真實像素空間 PGD(L-inf /255、存成 PNG 再讀回)+ JPEG 情境 + 防禦(多數決)
-run_robust_suite.py             攻擊組合(pgd / pgd_jpeg / saltpepper / spread,另可加 pgd_eot)× 防禦組合(含新的 transform、tq),--clean_only 量正常圖副作用
-summarize_all.py                把 output 裡新實驗的結果整理成 _table_*.csv
-analyze_robust.py               robust suite 結果的 McNemar 顯著性、95% CI、用存下來的投票做「少問幾次」的成本消融
+config.py / common.py           資料集路徑、模型別名;載入模型、build_inputs、generate、parse_answer、get_yes_no_token_ids
+attack.py / defense.py          舊版攻擊(改內部張量)、文字攻擊;各種防禦、問法模板(FB 預設 + HARMEME_TEMPLATES)
+run_robust_suite.py             ★ 主實驗:攻擊組合 × 防禦組合;--clean_only、--tq_transforms、--eot_defense_only、
+                                --template_set(auto:HarMeme 自動換問法)、--random_start(多 seed 用)
+run_image_attack.py             第一版真實像素攻擊 + JPEG baseline(run_robust_suite 也 import 它的函式,不能刪)
+run_clean_eval.py               乾淨混合樣本評估(含加權投票),ablate_templates / calibrate_threshold 會 import
+ablate_templates.py             3 種問法消融
+run_experiment.py               舊版攻擊實驗(論文中比較加權 vs 多數決用)
+diagnose_weighted_bias.py       加權投票 token 錯誤診斷(附錄)
+calibrate_threshold.py          門檻校正(負面結果)
+run_textfooler_experiment.py / test_textfooler.py / textattack_wrapper.py   TextFooler 文字攻擊探索
+summarize_all.py                把 output 結果整理成 _table_*.csv
+analyze_robust.py               McNemar、95% CI、成本消融;--main_transforms resize50 從投票重算主方法
+aggregate_seeds.py              多個 seed → 平均 ± 標準差(_seeds_<tag>.csv)
+make_harmeme_test_vqa.py        HarMeme test.jsonl → test_vqa.json + valtest_vqa.json(先用 val 比對規則)
 fix_harmeme_paths.py / check_harmeme.py   HarMeme 路徑修復與檢查
-output/                         所有實驗結果 json
+summarize_results.py            舊版攻擊實驗的結果整理
+README.md                       ★ 給學弟妹的操作手冊(安裝、資料、所有指令、多 seed、雲端要放什麼)
+THESIS_OUTLINE.md               ★ 論文大綱(每章的表格、結論、注意事項)
+archive/                        已淘汰的舊檔案(pgd_attack、eval_vqa、clean_control_check 等),不要用
+output/                         所有實驗結果 json / csv
 ```
 
 **defense.py 的函式:**
@@ -332,6 +331,12 @@ dev 主表(仍認出比例 / 乾淨圖):
 | spread | 71.2% | 78.0% | 89.8% | **93.2%** |
 
 - 未做(選做):針對「換問法 any-Yes」本身的 adaptive 攻擊(EOT 只對 3 個問法、原圖)。
+
+**下一步(2026-10-13 起):**
+1. HarMeme:`fix_harmeme_paths.py` → `make_harmeme_test_vqa.py`(會先比對 val 規則,看到 [STOP] 要回報)→ README 4.5 的三個指令(用 `annotations/valtest_vqa.json`,不調參)。
+2. 主方法顯著性:`analyze_robust.py ... --main_transforms resize50`(不用重跑)。
+3. 多 seed:README 第 5 節(`--random_start`,3 個 seed,`aggregate_seeds.py`)。
+4. 論文大綱見 `THESIS_OUTLINE.md`,操作手冊見 `README.md`。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**

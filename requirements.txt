@@ -1,0 +1,13 @@
+# Core (all main experiments). Install torch first with the CUDA build, see README.md step 1.
+torch==2.4.1
+transformers==4.45.2
+accelerate
+qwen-vl-utils
+pillow
+numpy
+
+# Optional: only for the TextFooler text-attack scripts (run_textfooler_experiment.py, test_textfooler.py)
+# textattack==0.3.10
+# tensorflow==2.13.*
+# tensorflow_hub
+# nltk

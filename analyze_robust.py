@@ -10,6 +10,7 @@
 
 用法(CMD):
   python analyze_robust.py --attack_json ./output/robust_attack_....json --clean_json ./output/robust_clean_....json --tag dev
+主方法(只用部分轉換的輕量版)的顯著性:加 --main_transforms resize50,從存下來的投票重算,不用重跑。
 輸出:
   ./output/_analysis_significance_<tag>.csv
   ./output/_analysis_subsets_<tag>.csv
@@ -77,6 +78,9 @@ def main():
     parser.add_argument("--attack_json", required=True)
     parser.add_argument("--clean_json", required=True)
     parser.add_argument("--tag", default="dev", help="name used in the output files, e.g. dev / train")
+    parser.add_argument("--main_transforms", default="",
+                        help="also test the lightweight main method, rebuilt from saved votes with only these "
+                             "transforms (all 3 questions, any rule), e.g. resize50; added as 'main_anyq'")
     args = parser.parse_args()
 
     with open(args.attack_json, encoding="utf-8") as f:
@@ -87,6 +91,24 @@ def main():
     t_attack = attack["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
     t_clean = clean["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
     t_names = t_attack if t_attack == t_clean else None
+
+    # Rebuild the lightweight main method from saved votes (no rerun needed)
+    pairs = list(PAIRS)
+    main_t = [t for t in args.main_transforms.split(",") if t]
+    if main_t:
+        def add_main(records, names, get_slot):
+            idx = tuple(names.index(t) for t in main_t)
+            for r in records:
+                for slot in get_slot(r):
+                    slot["preds"]["main_anyq"] = tq_from_votes(slot["votes"]["tq"], idx, (0, 1, 2))[1]
+        if all(t in t_attack for t in main_t) and all(t in t_clean for t in main_t):
+            add_main(a_res, t_attack, lambda r: r["attacks"].values())
+            add_main(c_res, t_clean, lambda r: [r])
+            pairs = [("main_anyq", "none"), ("main_anyq", "jpeg"), ("main_anyq", "text_anyyes"),
+                     ("main_anyq", "tq_anyq")] + pairs
+            print(f"main_anyq = {'+'.join(main_t)} x 3 questions, any rule (rebuilt from saved votes)")
+        else:
+            print(f"[WARN] --main_transforms {main_t} not found in the saved votes; skipped")
     attacks = list(a_res[0]["attacks"].keys()) if a_res else []
     gts = [r["ground_truth"] for r in c_res]
 
@@ -96,7 +118,7 @@ def main():
     for atk in attacks:
         preds = [r["attacks"][atk]["preds"] for r in a_res]
         n = len(preds)
-        for a, b in PAIRS:
+        for a, b in pairs:
             if a not in preds[0] or b not in preds[0]:
                 continue
             ya = [p[a] == "Yes" for p in preds]
@@ -112,7 +134,7 @@ def main():
             print(f"  {atk:10s} {a:12s} {sum(ya) / n:6.1%} vs {b:12s} {sum(yb) / n:6.1%} "
                   f"(only A {only_a}, only B {only_b}) p={pval:.4f}")
     cp = [r["preds"] for r in c_res]
-    for a, b in PAIRS:
+    for a, b in pairs:
         if a not in cp[0] or b not in cp[0]:
             continue
         ra = [p[a] == g for p, g in zip(cp, gts)]
