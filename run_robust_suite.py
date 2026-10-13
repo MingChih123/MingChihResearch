@@ -113,11 +113,13 @@ def pgd_jpeg_aware(model, inputs, builder, x0, yes_ids, no_ids, eps, alpha, step
     return (x0 + delta).clamp(0, 1).detach(), gap
 
 
-def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms):
+def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms,
+                     include_identity=True):
     """Adaptive attack against the tq defense: the attacker knows the 3 questions and the
     image transformations. Each step sums the loss over all questions, each seen through
     a different transformation (or none); transformations use BPDA (identity backward)."""
-    names = [None] + list(transforms)  # None = untransformed image
+    # None = untransformed image; without it the whole budget goes to the views the defense uses
+    names = ([None] if include_identity else []) + list(transforms)
     delta = torch.zeros_like(x0)
     gap = None
     for step in range(steps):
@@ -175,7 +177,8 @@ def predict_path(model, processor, path, question, max_new_tokens):
     return out
 
 
-def run_defenses(model, processor, img_path, question, caption, defenses, args, seed_offset, work_dir, tag):
+def run_defenses(model, processor, img_path, question, caption, defenses, args, seed_offset, work_dir, tag,
+                 transforms=None):
     """Returns {defense_name: prediction} plus vote details for one image file."""
     preds, votes = {}, {}
     questions = make_paraphrase_questions(caption)
@@ -205,7 +208,7 @@ def run_defenses(model, processor, img_path, question, caption, defenses, args, 
     if "transform" in defenses or "tq" in defenses:
         base = Image.open(img_path).convert("RGB")
         t_paths = {}
-        for name, fn in TRANSFORMS.items():
+        for name, fn in (transforms or TRANSFORMS).items():
             p = os.path.join(work_dir, f"{tag}_t_{name}.png")
             fn(base).save(p)
             t_paths[name] = p
@@ -269,6 +272,10 @@ def main():
     parser.add_argument("--attacks", type=str, default=",".join(DEFAULT_ATTACKS),
                         help="add pgd_eot for the adaptive attack that knows the tq defense")
     parser.add_argument("--defenses", type=str, default=",".join(ALL_DEFENSES))
+    parser.add_argument("--tq_transforms", type=str, default=",".join(TRANSFORMS),
+                        help="transformations used by the transform / tq defenses and by pgd_eot, e.g. resize50")
+    parser.add_argument("--eot_defense_only", action="store_true",
+                        help="pgd_eot spends its whole budget on the defense's transformed views (no raw image)")
     parser.add_argument("--eps", type=float, default=8.0, help="PGD L-inf budget in /255")
     parser.add_argument("--alpha", type=float, default=2.0, help="PGD step in /255")
     parser.add_argument("--num_steps", type=int, default=10)
@@ -291,6 +298,10 @@ def main():
     for d in defenses:
         assert d in ALL_DEFENSES, f"unknown defense {d}"
     keys = defense_keys(defenses)
+    tq_names = [t for t in args.tq_transforms.split(",") if t]
+    for t in tq_names:
+        assert t in TRANSFORMS, f"unknown transform {t} (choose from {list(TRANSFORMS)})"
+    active_transforms = {t: TRANSFORMS[t] for t in tq_names}
 
     set_seed(args.seed)
     dataset_root = resolve_dataset_root(args.dataset_root)
@@ -303,6 +314,8 @@ def main():
            + ("" if args.clean_only else f"_eps{args.eps:g}_s{args.num_steps}")
            # Non-default attack sets get their own file so earlier results are never overwritten
            + ("" if args.clean_only or attacks == DEFAULT_ATTACKS else "_atk-" + "-".join(attacks))
+           + ("" if tq_names == list(TRANSFORMS) else "_tq-" + "-".join(tq_names))
+           + ("_eotdef" if args.eot_defense_only and not args.clean_only else "")
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
@@ -351,7 +364,8 @@ def main():
 
         if args.clean_only:
             rec["preds"], rec["votes"] = run_defenses(model, processor, x0_path, question, caption, defenses,
-                                                      args, seed_offset, work_dir, f"{name}_clean")
+                                                      args, seed_offset, work_dir, f"{name}_clean",
+                                                      active_transforms)
             results.append(rec)
             print(f"  [{i+1}/{len(subset)}] gt={gt:3s} " + " ".join(f"{k}={rec['preds'].get(k)}" for k in keys)
                   + f" ({time.time() - s0:.1f}s)", flush=True)
@@ -381,7 +395,8 @@ def main():
                 q_inputs = [build_inputs(processor, x0_path, q, model.device)
                             for q in make_paraphrase_questions(caption)]
                 xa, _ = pgd_eot_adaptive(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
-                                         args.num_steps, TRANSFORMS)
+                                         args.num_steps, active_transforms,
+                                         include_identity=not args.eot_defense_only)
                 adv = tensor_to_pil(xa)
                 del q_inputs
             elif atk == "saltpepper":
@@ -392,7 +407,7 @@ def main():
             adv.save(adv_path)
 
             preds, votes = run_defenses(model, processor, adv_path, question, caption, defenses,
-                                        args, seed_offset, work_dir, f"{name}_{atk}")
+                                        args, seed_offset, work_dir, f"{name}_{atk}", active_transforms)
             # Attack success is judged without any defense
             if "none" not in preds:
                 preds["none"] = predict_path(model, processor, adv_path, question, args.max_new_tokens)

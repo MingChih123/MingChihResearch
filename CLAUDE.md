@@ -292,6 +292,23 @@ python summarize_results.py
 - 代價:tq_anyq 正常迷因誤判率 5.2% → 21.6%、每張圖問 15 次。
 - 顯著性與成本消融:`analyze_robust.py`(用存下來的投票重算,不用 GPU)。
 
+**顯著性(McNemar 精確檢定,dev,59 筆攻擊 / 500 筆乾淨):**
+- tq_anyq vs 不防禦:pgd 34 vs 0、pgd_jpeg 27 vs 0、pgd_eot 22 vs 1(皆 p<0.001);saltpepper p=0.016、spread p=0.001。
+- tq_anyq vs JPEG:pgd p<0.001、pgd_jpeg p<0.001、pgd_eot p=0.021、saltpepper p=0.008、spread p=0.039 → 全部顯著。
+- tq_anyq vs text_anyyes(同樣 3 個問法、同樣誤判數):pgd p<0.001、pgd_jpeg p=0.008、pgd_eot p=0.022 → 圖片轉換在梯度攻擊下的貢獻是顯著的;saltpepper / spread 不顯著。
+- tq_majority:多數比較不顯著(pgd_eot vs 不防禦 p=0.29)。
+- 乾淨圖準確率:tq_anyq 62.8% vs 不防禦 59.2%,p=0.089(不顯著,但至少沒有變差);train 上 66.0% vs 69.5%,p=0.31。
+- train 上主要結論一致(tq_anyq vs 不防禦、vs JPEG 在 pgd / pgd_jpeg 下顯著)。
+
+**成本消融(用存下來的投票重算,`_analysis_subsets_*.csv`):**
+- 在 train 上挑:只用 **resize50 一種轉換 × 3 問法 + anyq(每張圖 3 次)** 就和 15 次一樣好(train:pgd 94.4、pgd_jpeg 94.4、spread 93.0、誤判 28.3%;15 次是 90.1 / 85.9 / 90.1 / 26.8%)。
+- dev 上驗證 resize50 × 3 問法 anyq:乾淨 acc 64.4% / recall 50.0% / 誤判 21.2%;pgd 96.6、pgd_jpeg 91.5、pgd_eot 81.4、saltpepper 100、spread 93.2 → 每一項都 ≥ 15 次的版本,成本只有 1/5。
+- 和 text_anyyes(也是每張 3 次、誤判 21.6%)比:pgd 96.6 vs 66.1、pgd_jpeg 91.5 vs 76.3 → 同樣成本、同樣誤判,多了大量抗攻擊能力。
+- JPEG 類轉換是比較弱的一環(會被 pgd_jpeg 打穿),縮小再放大最強。
+- **注意**:dev 上的 pgd_eot 是針對 5 種轉換設計的,不是針對 resize-only;要說 resize-only 版本強健,必須再測「只針對 resize50 的 adaptive 攻擊」:
+  `python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd_eot --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq`
+- `run_robust_suite.py` 新參數:`--tq_transforms`(tq / transform / pgd_eot 用哪些轉換)、`--eot_defense_only`(pgd_eot 只打防禦看得到的轉換版本)。
+
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**
 
