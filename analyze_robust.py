@@ -84,6 +84,9 @@ def main():
     with open(args.clean_json, encoding="utf-8") as f:
         clean = json.load(f)
     a_res, c_res = attack["results"], clean["results"]
+    t_attack = attack["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
+    t_clean = clean["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
+    t_names = t_attack if t_attack == t_clean else None
     attacks = list(a_res[0]["attacks"].keys()) if a_res else []
     gts = [r["ground_truth"] for r in c_res]
 
@@ -126,19 +129,20 @@ def main():
               f"(only A {only_a}, only B {only_b}) p={pval:.4f}")
 
     # ---------- 2. cost ablation from saved votes ----------
-    has_votes = a_res and "tq" in a_res[0]["attacks"][attacks[0]]["votes"] and "tq" in c_res[0]["votes"]
+    has_votes = (t_names is not None and a_res and "tq" in a_res[0]["attacks"][attacks[0]]["votes"]
+                 and "tq" in c_res[0]["votes"])
     sub_rows = []
     if has_votes:
         configs = []
-        for k in range(1, len(TRANSFORM_NAMES) + 1):
-            for t_idx in itertools.combinations(range(len(TRANSFORM_NAMES)), k):
+        for k in range(1, len(t_names) + 1):
+            for t_idx in itertools.combinations(range(len(t_names)), k):
                 configs.append((t_idx, (0, 1, 2)))
         for k in (1, 2):
             for q_idx in itertools.combinations(range(3), k):
-                configs.append((tuple(range(len(TRANSFORM_NAMES))), q_idx))
+                configs.append((tuple(range(len(t_names))), q_idx))
 
         for t_idx, q_idx in configs:
-            row = {"transforms": "+".join(TRANSFORM_NAMES[t] for t in t_idx),
+            row = {"transforms": "+".join(t_names[t] for t in t_idx),
                    "questions": "+".join(QUESTION_NAMES[q] for q in q_idx),
                    "queries_per_image": len(t_idx) * len(q_idx)}
             for rule_i, rule in enumerate(("majority", "anyq")):
@@ -162,7 +166,7 @@ def main():
             print(f"  {r['queries_per_image']:2d} q | {r['transforms']:38s} {r['questions']:9s} | "
                   f"clean acc={r['anyq_clean_acc']} false_alarm={r['anyq_clean_false_alarm']} | {atk_cells}")
     else:
-        print("\n(no saved tq votes found, cost ablation skipped)")
+        print("\n(no saved tq votes, or attack/clean runs used different transforms: cost ablation skipped)")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_significance_{args.tag}.csv"), sig_rows)
