@@ -27,7 +27,9 @@ OUTPUT_DIR = "./output"
 TRANSFORM_NAMES = ["jpeg50", "jpeg75", "resize50", "blur1", "median3"]  # order used in run_robust_suite.py
 QUESTION_NAMES = ["q0", "q1", "q2"]
 PAIRS = [("tq_anyq", "none"), ("tq_anyq", "jpeg"), ("tq_anyq", "text_anyyes"),
-         ("tq_majority", "none"), ("tq_majority", "jpeg")]
+         ("tq_majority", "none"), ("tq_majority", "jpeg"),
+         # text-side defenses (only when the run included them)
+         ("main_safe", "none"), ("main_safe", "tq_anyq"), ("norm", "none"), ("guard", "none")]
 
 
 def wilson(k, n, z=1.96):
