@@ -158,6 +158,15 @@ python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --atta
 ```
 約 4~5 小時、5 小時、1~2 小時。第三個是「專門針對主方法(只用縮小再放大)」的攻擊。
 
+**更強的 adaptive 攻擊(2026-10-15 加,回應老師的問題):** 舊的 `pgd_eot` 把三個問法的分數加總,
+不保證三個問法都被打成 No;`pgd_eot_max` 每一步專打「最還在說 Yes」的問法。10 步和 30 步各跑一次:
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq --num_steps 30
+```
+跑完會多印一段「每個問法還說 Yes 的比例、三個都 No 的比例」。
+
 ### 4.4 整理表格、顯著性與成本分析(不用 GPU,幾秒鐘)
 
 ```bash
@@ -175,7 +184,8 @@ python analyze_robust.py --attack_json ./output/robust_attack_FB_dev_vqa_Qwen2-V
 | `_table_robust_attack.csv` | 每種攻擊下,各防禦還能認出幾 % 的仇恨迷因 |
 | `_table_robust_clean.csv` | 各防禦在正常圖片上的準確率、recall、F1、誤判 |
 | `_analysis_significance_<tag>.csv` | 兩兩比較的 McNemar p 值、95% 信賴區間 |
-| `_analysis_subsets_<tag>.csv` | 只用部分轉換 / 部分問法時的效果(成本分析) |
+| `_analysis_subsets_<tag>.csv` | 只用部分轉換 / 部分問法時的效果(成本分析;含「resize50 + 單一問法」的同成本對照) |
+| `_analysis_perq_<tag>.csv` | 攻擊後每個問法各自還說 Yes 的比例、三個問法都答 No 的比例(附分母和信賴區間) |
 
 ### 4.5 第二個資料集:HarMeme **val + test**(驗證泛化)
 
@@ -187,6 +197,7 @@ q0 是 HarMeme 原本的問題,q1、q2 是「仇恨或有害、針對群體或�
 python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --clean_only
 python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks pgd,pgd_jpeg,pgd_eot,saltpepper,spread
 python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks pgd_eot --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq
+python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq
 python summarize_all.py
 ```
 
