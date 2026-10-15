@@ -48,7 +48,7 @@
 - **環境警告**:安裝 tensorflow 後 pip 報 `torch 2.4.1+cu121 requires typing-extensions>=4.8.0, but you have 4.5.0`。目前能跑,但可能是之後出奇怪錯誤的原因,若遇到莫名錯誤先檢查這個。
 - 模型:`Qwen/Qwen2-VL-2B-Instruct`(主力)。`Qwen/Qwen2-VL-7B-Instruct` 只能降低圖片解析度後小樣本跑(`--min_pixels 65536 --max_pixels 200704`),一筆約 260~280 秒。
 - 8GB 的限制:PGD 反向傳播時 7B 預設參數會 OOM;已凍結全部權重、`model.eval()`、不開 gradient checkpointing(開了會讓梯度變 None)。
-- 專案路徑:`C:\Users\USER\OneDrive\Desktop\MChih_Exp\2\`
+- 專案路徑:`C:\Users\USER\Desktop\MChih_Exp\Exp\`(2026-10-15 起;舊的在 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2\`)
 
 ---
 
@@ -337,6 +337,18 @@ dev 主表(仍認出比例 / 乾淨圖):
 2. 主方法顯著性:`analyze_robust.py ... --main_transforms resize50`(不用重跑)。
 3. 多 seed:README 第 5 節(`--random_start`,3 個 seed,`aggregate_seeds.py`)。
 4. 論文大綱見 `THESIS_OUTLINE.md`,操作手冊見 `README.md`。
+
+**HarMeme 結果(val+test 531 筆,不調參,2026-10-15):**
+- 乾淨(185 Yes / 346 No):none acc 67.4% / recall 12.4%(23/185)/ FP 11;tq_anyq(15 次版)67.6% / 16.2% / FP 17;text_anyyes recall 14.1%。模型在 HarMeme 上極度保守,any-Yes 幾乎拉不起 recall(和 FB 差很多)。
+- 攻擊(只有 23 筆進入攻擊,95% CI 約 ±20%):pgd none 21.7 / jpeg 78.3 / tq_anyq 82.6;pgd_jpeg none 39.1 / jpeg 34.8 / tq_anyq 73.9;pgd_eot(5 轉換)none 34.8 / tq_anyq 52.2。
+- **針對 resize 的 adaptive 攻擊(eotdef):tq_anyq 65.2% = 不防禦 65.2%** → 主方法在 HarMeme 上撐不住專門攻擊。要誠實寫進限制。
+
+**老師回饋(10/15 報告後)與處理:** 全文見 `ADVISOR_FEEDBACK.md`(第 8 節是驗證紀錄)。
+- 威脅模型要先講明:只改圖片 ≤8/255、模型乾淨可信、攻擊和回答同一模型、問法人工寫;投毒/後門、文字注入、黑盒遷移不在範圍內。
+- 不要做:重新訓練、後門偵測或移除。
+- 舊 `pgd_eot` 的損失是三個問法加總,不保證三個都被打成 No → 76.3% 可能偏高。新增 `pgd_eot_max`(soft-max over 問法,打最還在說 Yes 的那個),舊結果不動。`analyze_robust.py` 新增 `_analysis_perq_<tag>.csv`(每問法成功率、三個都 No 比例)與「resize50 + 單一問法」同成本對照。
+- 待做:P1 跑 `pgd_eot_max`(FB dev 10 步 / 30 步、HarMeme);P2 遷移測試;P3 caption 文字注入;P5 TextFooler 重跑;P6 全黑/空白、圖上文字。
+- 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 
 
 以下數字全部來自上面的程式。**加權投票那幾欄在處理第 0 節的問題前,先當作「待驗證」。**

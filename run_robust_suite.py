@@ -14,6 +14,10 @@
   spread      像素擾動:每個像素和附近隨機一個像素交換位置(參考 HateProof 的 Spread)
   pgd_eot     【知道防禦方式的攻擊】攻擊者知道 3 個問法和 5 種圖片轉換,每一步把它們都考慮進去
               (預設不跑,要用 --attacks 指定;比 pgd 慢約 3 倍)
+  pgd_eot_max 【更強的 adaptive 攻擊,2026-10-15 新增】any 規則要「三個問法都答 No」才會被騙,
+              所以每一步對三個問法的 Yes 分數取 soft 最大值再壓低(主要打「最還在說 Yes」的那個問法),
+              每個問法都看過所有轉換;保留「最多問法答 No」的那一步。會記錄每個問法的最終分數。
+              配合 --tq_transforms resize50 --eot_defense_only 就是針對主方法的攻擊。
   (saltpepper / spread 的強度是我們自己設定的近似值,HateProof 用 GIMP 做,沒有給確切參數)
 
 防禦(--defenses,用逗號分隔):
@@ -56,7 +60,7 @@ from run_image_attack import (PixelValuesBuilder, pil_to_tensor, tensor_to_pil, 
 
 OUTPUT_DIR = "./output"
 DEFAULT_ATTACKS = ["pgd", "pgd_jpeg", "saltpepper", "spread"]
-ALL_ATTACKS = DEFAULT_ATTACKS + ["pgd_eot"]
+ALL_ATTACKS = DEFAULT_ATTACKS + ["pgd_eot", "pgd_eot_max"]
 ALL_DEFENSES = ["none", "jpeg", "text", "text_anyyes", "noise", "transform", "tq"]
 
 # Image transformations used by the transform / tq defenses (odd count -> no ties)
@@ -156,6 +160,64 @@ def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alp
             delta = (x0 + delta).clamp(0, 1) - x0
         delta = delta.detach()
     return (x0 + delta).clamp(0, 1).detach(), gap
+
+
+def pgd_eot_max(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms,
+                include_identity=True, init_delta=None, temperature=1.0):
+    """Stronger adaptive attack against the any-question rule (tq_anyq / main method).
+
+    The any rule only fails if EVERY question answers No, so the attacker must push down the
+    question that is still most Yes. For each question q the Yes margin m_q = logit(Yes) - logit(No)
+    is averaged over all views (every transformation, plus the raw image if include_identity), and
+    the loss is a soft maximum over questions: T * logsumexp(m_q / T). Its gradient puts most weight
+    on the question with the highest Yes margin. Gradients are taken one forward pass at a time
+    (BPDA through the transformations) and combined afterwards, so memory equals one forward pass.
+    Returns the iterate with the most questions at No (ties: lowest max margin), plus per-question
+    margins of that iterate."""
+    names = ([None] if include_identity else []) + list(transforms)
+    nq = len(inputs_per_q)
+    delta = torch.zeros_like(x0) if init_delta is None else init_delta.clone()
+    best, best_key, best_margins = delta.clone(), None, None
+    for step in range(steps + 1):  # last pass only evaluates the final iterate
+        do_grad = step < steps
+        margins, grads = [], []
+        for inputs in inputs_per_q:
+            m_sum, g_sum = 0.0, torch.zeros_like(x0)
+            for name in names:
+                d = delta.clone().requires_grad_(do_grad)
+                x = (x0 + d).clamp(0, 1)
+                if name is not None:
+                    xt = pil_to_tensor(transforms[name](tensor_to_pil(x.detach())), x.device)
+                    x = x + (xt - x).detach()  # straight-through
+                with torch.set_grad_enabled(do_grad):
+                    outputs = model(input_ids=inputs.input_ids, attention_mask=inputs.attention_mask,
+                                    pixel_values=builder(x), image_grid_thw=inputs.image_grid_thw)
+                    logit_yes, logit_no = yes_no_logits(outputs.logits[0, -1, :], yes_ids, no_ids)
+                    m = logit_yes - logit_no
+                if do_grad:
+                    m.backward()
+                    if d.grad is not None:
+                        g_sum += d.grad.detach()
+                m_sum += m.item()
+                del outputs, logit_yes, logit_no, m, d
+                torch.cuda.empty_cache()
+            margins.append(m_sum / len(names))
+            grads.append(g_sum / len(names))
+        # Keep the best iterate: most questions already at No, then the smallest max margin
+        key = (sum(mq < 0 for mq in margins), -max(margins))
+        if best_key is None or key > best_key:
+            best, best_key, best_margins = delta.clone(), key, list(margins)
+        if not do_grad or max(margins) < -1.0:
+            break  # final evaluation done, or every question is already clearly No (margin < -1)
+        mt = torch.tensor(margins) / temperature
+        w = torch.softmax(mt, dim=0).tolist()  # d/dm_q of T*logsumexp(m/T)
+        grad = sum(wq * gq for wq, gq in zip(w, grads))
+        with torch.no_grad():
+            delta = delta - alpha * grad.sign()  # descend the soft max of Yes margins
+            delta = delta.clamp(-eps, eps)
+            delta = (x0 + delta).clamp(0, 1) - x0
+        delta = delta.detach()
+    return (x0 + best).clamp(0, 1).detach(), best_margins
 
 
 def salt_pepper(img, amount, rng):
@@ -398,6 +460,7 @@ def main():
         rec["attacks"] = {}
         line = []
         for ai, atk in enumerate(attacks):
+            attack_info = None
             init = random_init(x0, eps, args.seed * 100003 + i * 101 + ai) if args.random_start else None
             if atk == "pgd":
                 xa, _ = pgd_image_space(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha, args.num_steps,
@@ -415,6 +478,15 @@ def main():
                                          include_identity=not args.eot_defense_only, init_delta=init)
                 adv = tensor_to_pil(xa)
                 del q_inputs
+            elif atk == "pgd_eot_max":
+                q_inputs = [build_inputs(processor, x0_path, q, model.device)
+                            for q in make_paraphrase_questions(caption, args.template_set, question)]
+                xa, margins = pgd_eot_max(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
+                                          args.num_steps, active_transforms,
+                                          include_identity=not args.eot_defense_only, init_delta=init)
+                adv = tensor_to_pil(xa)
+                attack_info = {"yes_margin_per_question": [round(m, 3) for m in margins]}
+                del q_inputs
             elif atk == "saltpepper":
                 adv = salt_pepper(x0_pil, args.saltpepper_amount, np_rng)
             else:
@@ -428,6 +500,8 @@ def main():
             if "none" not in preds:
                 preds["none"] = predict_path(model, processor, adv_path, question, args.max_new_tokens)
             rec["attacks"][atk] = {"preds": preds, "votes": votes, "success": preds["none"] != "Yes"}
+            if attack_info:
+                rec["attacks"][atk]["attack_info"] = attack_info
             line.append(f"{atk}:{'OK' if preds['none'] != 'Yes' else '--'}")
             gc.collect()
             torch.cuda.empty_cache()
@@ -481,8 +555,19 @@ def main():
                 cells.append(f"{acc:11.1%}" if acc is not None else f"{'-':>11s}")
             if "tq" in defenses and rows:
                 row["tq_flag_for_review_rate"] = 1 - sum(x["preds"]["tq_unanimous"] for x in rows) / n
+                # Per question (majority over transformations): share of memes where that question still says Yes
+                nq = len(rows[0]["votes"]["tq"])
+                row["tq_per_question_yes"] = [sum(majority_vote(x["votes"]["tq"][qi]) == "Yes" for x in rows) / n
+                                              for qi in range(nq)]
+                row["tq_all_questions_no"] = sum(x["preds"]["tq_anyq"] != "Yes" for x in rows) / n
             summary["table"][atk] = row
             print(f"{atk:12s} {succ / n if n else 0:8.1%} " + " ".join(cells))
+        if "tq" in defenses and n:
+            print("tq per question (majority over transformations): % still Yes for q0/q1/q2; % all questions No")
+            for atk in attacks:
+                row = summary["table"][atk]
+                print(f"  {atk:12s} " + " ".join(f"q{qi}={v:.1%}" for qi, v in enumerate(row["tq_per_question_yes"]))
+                      + f"  all_no={row['tq_all_questions_no']:.1%} (n={n})")
 
     total = time.time() - t0
     print(f"Total time: {total:.1f}s", flush=True)

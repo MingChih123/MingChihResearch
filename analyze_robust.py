@@ -13,7 +13,8 @@
 主方法(只用部分轉換的輕量版)的顯著性:加 --main_transforms resize50,從存下來的投票重算,不用重跑。
 輸出:
   ./output/_analysis_significance_<tag>.csv
-  ./output/_analysis_subsets_<tag>.csv
+  ./output/_analysis_subsets_<tag>.csv   (含「單一轉換 × 單一問法」:同成本比較「最好的一個問法 + 縮放」)
+  ./output/_analysis_perq_<tag>.csv      (每個問法各自還說 Yes 的比例、三個問法都答 No 的比例)
 """
 import argparse
 import csv
@@ -162,6 +163,9 @@ def main():
         for k in (1, 2):
             for q_idx in itertools.combinations(range(3), k):
                 configs.append((tuple(range(len(t_names))), q_idx))
+                if len(t_names) > 1:  # one transformation x fewer questions (same-cost comparisons)
+                    for t in range(len(t_names)):
+                        configs.append(((t,), q_idx))
 
         for t_idx, q_idx in configs:
             row = {"transforms": "+".join(t_names[t] for t in t_idx),
@@ -190,9 +194,46 @@ def main():
     else:
         print("\n(no saved tq votes, or attack/clean runs used different transforms: cost ablation skipped)")
 
+    # ---------- 3. per question: does the attack flip every question? ----------
+    perq_rows = []
+    print("\n===== Per question under attack: % still Yes (n = attacked memes) =====")
+    for atk in attacks:
+        slots = [r["attacks"][atk] for r in a_res]
+        n = len(slots)
+        sources = []
+        if "text" in slots[0]["votes"]:
+            sources.append(("text (raw image)", [s["votes"]["text"] for s in slots]))
+        if "tq" in slots[0]["votes"]:
+            def per_q(grid, t_idx):
+                return [majority([grid[str(q)][t] for t in t_idx]) for q in range(len(grid))]
+            sources.append((f"tq ({'+'.join(t_attack)})",
+                            [per_q(s["votes"]["tq"], range(len(t_attack))) for s in slots]))
+            if main_t and all(t in t_attack for t in main_t) and main_t != t_attack:
+                idx = [t_attack.index(t) for t in main_t]
+                sources.append((f"main ({'+'.join(main_t)})", [per_q(s["votes"]["tq"], idx) for s in slots]))
+        if "attack_info" in slots[0]:
+            # the attacker's own Yes margins (before saving to PNG); margin < 0 means that question says No
+            sources.append(("attacker margins", [["Yes" if m >= 0 else "No"
+                                                  for m in s["attack_info"]["yes_margin_per_question"]]
+                                                 for s in slots]))
+        for src, answers in sources:
+            row = {"attack": atk, "source": src, "n": n}
+            for qi in range(len(answers[0])):
+                k = sum(a[qi] == "Yes" for a in answers)
+                row[f"q{qi}_still_yes"] = f"{k / n:.1%} ({k}/{n})"
+            k_any = sum("Yes" in a for a in answers)
+            lo, hi = wilson(n - k_any, n)
+            row["any_still_yes"] = f"{k_any / n:.1%} ({k_any}/{n})"
+            row["all_questions_no"] = f"{(n - k_any) / n:.1%} ({n - k_any}/{n})"
+            row["all_no_95CI"] = f"{lo:.1%}-{hi:.1%}"
+            perq_rows.append(row)
+            print(f"  {atk:12s} {src:28s} " + " ".join(f"{k}={v}" for k, v in row.items()
+                                                       if k.startswith("q") or k == "all_questions_no"))
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_significance_{args.tag}.csv"), sig_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_subsets_{args.tag}.csv"), sub_rows)
+    write_csv(os.path.join(OUTPUT_DIR, f"_analysis_perq_{args.tag}.csv"), perq_rows)
 
 
 if __name__ == "__main__":

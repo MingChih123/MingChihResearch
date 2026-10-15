@@ -39,7 +39,8 @@ def write_csv(name, rows):
         return
     path = os.path.join(OUTPUT_DIR, name)
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        fields = list(dict.fromkeys(k for r in rows for k in r))  # union of columns, first-seen order
+        w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
     print(f"  saved {path} ({len(rows)} rows)")
@@ -156,10 +157,16 @@ def robust_attack_tables(files):
             row = {"file": os.path.basename(path), "attacked_memes": n, "attack": atk,
                    "attack_success": pct(r.get("attack_success_rate"))}
             for k, v in r.items():
-                if k not in ("attack_success_rate", "tq_flag_for_review_rate"):
+                if k not in ("attack_success_rate", "tq_flag_for_review_rate",
+                             "tq_per_question_yes", "tq_all_questions_no"):
                     row[f"still_detected_{k}"] = pct(v)
             if "tq_flag_for_review_rate" in r:
                 row["tq_flag_for_review"] = pct(r["tq_flag_for_review_rate"])
+            # newer runs: per question (majority over transformations) and "all questions No"
+            for qi, v in enumerate(r.get("tq_per_question_yes", [])):
+                row[f"tq_q{qi}_still_yes"] = pct(v)
+            if "tq_all_questions_no" in r:
+                row["tq_all_questions_no"] = pct(r["tq_all_questions_no"])
             rows.append(row)
     return rows
 
