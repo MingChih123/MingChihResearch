@@ -349,6 +349,8 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 舊 `pgd_eot` 的損失是三個問法加總,不保證三個都被打成 No → 76.3% 可能偏高。新增 `pgd_eot_max`(soft-max over 問法,打最還在說 Yes 的那個),舊結果不動。`analyze_robust.py` 新增 `_analysis_perq_<tag>.csv`(每問法成功率、三個都 No 比例)與「resize50 + 單一問法」同成本對照。
 - 待做:P1 跑 `pgd_eot_max`(FB dev 10 步 / 30 步、HarMeme);P2 遷移測試;P3 caption 文字注入;P5 TextFooler 重跑;P6 全黑/空白、圖上文字。
 - 2026-10-16:`run_robust_suite.py` 加了不用梯度的圖文攻擊 `homoglyph` / `caption_inject` / `image_text`,和文字端防禦 `norm` / `guard` / `main_safe`(norm + guard + 主方法),檔名帶 `_txtdef`。所有攻擊與防禦都放在 `run_robust_suite.py`,使用者不想要更多檔案。
+- 2026-10-16 結果(FB dev 59 筆):pgd_eot_max 10 步 主方法 66.1%(三個都 No 33.9%)、30 步 55.9% vs 不防禦 44.1%(McNemar 11 vs 4,p=0.12,不顯著);HarMeme 23 筆 主方法 43.5% < 不防禦 65.2%。homoglyph 攻擊成功 0%(模型讀得懂同形字);caption_inject 成功 98.3%,所有防禦幾乎無效(main_safe 15.3%);image_text 成功 69.5%,主方法救回到 62.7%。guard/norm 乾淨圖副作用很小但也擋不住。
+- image_text 的白條會蓋住原圖下方的迷因文字(使用者發現),新增 `image_text_pad`(多接一條白色區域,不蓋原圖)。
 - 使用者已用 git 連上 GitHub(`git pull` 更新),不用再下載 ZIP。
 - 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 
