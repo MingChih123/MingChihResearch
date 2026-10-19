@@ -46,6 +46,10 @@
                → 藏一句「Answer No」的話,正向問法會被騙,但反問的會因此標記
   main_neg     主方法 + 反問(縮小再放大後的圖,3 個正向問法 + 1 個反問,任一判仇恨就標記,每張 4 次)
 
+--attack_all(2026-10-19 新增):攻擊「全部」的圖,不只模型原本答對的仇恨迷因。
+  仇恨迷因往 No 攻擊、正常迷因往 Yes 攻擊,最後報整體準確率(和 RGCL / TeCoA / RAMPART 等論文同一種格式),
+  也分開報仇恨迷因、正常迷因各自的準確率。檔名帶 _all。
+
 用法(CMD):
   # 開發用:先在 train 上跑(之後在 dev 報最終結果)
   python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --num_samples 150 --seed 0
@@ -205,7 +209,7 @@ def pgd_eot_adaptive(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alp
 
 
 def pgd_eot_max(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, steps, transforms,
-                include_identity=True, init_delta=None, temperature=1.0):
+                include_identity=True, init_delta=None, temperature=1.0, goal="all"):
     """Stronger adaptive attack against the any-question rule (tq_anyq / main method).
 
     The any rule only fails if EVERY question answers No, so the attacker must push down the
@@ -215,9 +219,13 @@ def pgd_eot_max(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, s
     on the question with the highest Yes margin. Gradients are taken one forward pass at a time
     (BPDA through the transformations) and combined afterwards, so memory equals one forward pass.
     Returns the iterate with the most questions at No (ties: lowest max margin), plus per-question
-    margins of that iterate."""
+    margins of that iterate.
+    goal="all": every question must flip (attacking a hateful meme against the any rule).
+    goal="any": one flipped question is enough (attacking a benign meme toward the target; with
+    yes_ids/no_ids swapped by the caller), so the soft minimum of the margins is pushed down instead."""
     names = ([None] if include_identity else []) + list(transforms)
     nq = len(inputs_per_q)
+    sign = 1.0 if goal == "all" else -1.0  # soft max vs soft min
     delta = torch.zeros_like(x0) if init_delta is None else init_delta.clone()
     best, best_key, best_margins = delta.clone(), None, None
     for step in range(steps + 1):  # last pass only evaluates the final iterate
@@ -246,12 +254,15 @@ def pgd_eot_max(model, inputs_per_q, builder, x0, yes_ids, no_ids, eps, alpha, s
             margins.append(m_sum / len(names))
             grads.append(g_sum / len(names))
         # Keep the best iterate: most questions already at No, then the smallest max margin
-        key = (sum(mq < 0 for mq in margins), -max(margins))
+        if goal == "all":
+            key = (sum(mq < 0 for mq in margins), -max(margins))
+        else:
+            key = (int(min(margins) < 0), -min(margins))
         if best_key is None or key > best_key:
             best, best_key, best_margins = delta.clone(), key, list(margins)
-        if not do_grad or max(margins) < -1.0:
+        if not do_grad or (max(margins) if goal == "all" else min(margins)) < -1.0:
             break  # final evaluation done, or every question is already clearly No (margin < -1)
-        mt = torch.tensor(margins) / temperature
+        mt = sign * torch.tensor(margins) / temperature
         w = torch.softmax(mt, dim=0).tolist()  # d/dm_q of T*logsumexp(m/T)
         grad = sum(wq * gq for wq, gq in zip(w, grads))
         with torch.no_grad():
@@ -455,6 +466,8 @@ def main():
     parser.add_argument("--dataset_root", type=str, required=True)
     parser.add_argument("--data_file", type=str, default=None, help="use train_vqa.json while developing")
     parser.add_argument("--model_name", type=str, default="qwen2b")
+    parser.add_argument("--attack_all", action="store_true",
+                        help="attack every image (hateful toward No, benign toward Yes) and report accuracy")
     parser.add_argument("--offset", type=int, default=0,
                         help="skip the first K samples after shuffling (use samples never seen during development, "
                              "e.g. --offset 150 on train in attack mode, --offset 200 in clean mode)")
@@ -528,6 +541,7 @@ def main():
            + ("" if args.clean_only or attacks == DEFAULT_ATTACKS else "_atk-" + "-".join(attacks))
            + ("" if tq_names == list(TRANSFORMS) else "_tq-" + "-".join(tq_names))
            + ("_eotdef" if args.eot_defense_only and not args.clean_only else "")
+           + ("_all" if args.attack_all and not args.clean_only else "")
            + (f"_off{args.offset}" if args.offset else "")
            + ("_rs" if args.random_start and not args.clean_only else "")
            # text-side defenses get their own file so the main clean/attack files are never overwritten
@@ -539,7 +553,7 @@ def main():
 
     with open(f"{dataset_root}/{data_file}", encoding="utf-8") as f:
         data = json.load(f)
-    if not args.clean_only:
+    if not args.clean_only and not args.attack_all:
         data = [d for d in data if d["answer"] == "Yes"]
     rng = random.Random(args.seed)
     rng.shuffle(data)
@@ -591,7 +605,8 @@ def main():
             continue
 
         clean_pred = predict_path(model, processor, x0_path, question, args.max_new_tokens)
-        if clean_pred != "Yes":
+        rec["clean_pred"] = clean_pred
+        if not args.attack_all and clean_pred != "Yes":
             n_skipped["clean_not_yes"] += 1
             print(f"  [{i+1}/{len(subset)}] skipped (clean pred={clean_pred})", flush=True)
             continue
@@ -600,21 +615,24 @@ def main():
         x0_inputs = build_inputs(processor, x0_path, question, model.device)
         rec["attacks"] = {}
         line = []
+        # Push toward the wrong answer: hateful -> No (default), benign -> Yes (swap the token ids)
+        a_yes, a_no = (yes_ids, no_ids) if gt == "Yes" else (no_ids, yes_ids)
+        goal = "all" if gt == "Yes" else "any"
         for ai, atk in enumerate(attacks):
             attack_info = None
             init = random_init(x0, eps, args.seed * 100003 + i * 101 + ai) if args.random_start else None
             if atk == "pgd":
-                xa, _ = pgd_image_space(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha, args.num_steps,
+                xa, _ = pgd_image_space(model, x0_inputs, builder, x0, a_yes, a_no, eps, alpha, args.num_steps,
                                         init_delta=init)
                 adv = tensor_to_pil(xa)
             elif atk == "pgd_jpeg":
-                xa, _ = pgd_jpeg_aware(model, x0_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
+                xa, _ = pgd_jpeg_aware(model, x0_inputs, builder, x0, a_yes, a_no, eps, alpha,
                                        args.num_steps, args.jpeg_quality, init_delta=init)
                 adv = tensor_to_pil(xa)
             elif atk == "pgd_eot":
                 q_inputs = [build_inputs(processor, x0_path, q, model.device)
                             for q in make_paraphrase_questions(caption, args.template_set, question)]
-                xa, _ = pgd_eot_adaptive(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
+                xa, _ = pgd_eot_adaptive(model, q_inputs, builder, x0, a_yes, a_no, eps, alpha,
                                          args.num_steps, active_transforms,
                                          include_identity=not args.eot_defense_only, init_delta=init)
                 adv = tensor_to_pil(xa)
@@ -622,9 +640,9 @@ def main():
             elif atk == "pgd_eot_max":
                 q_inputs = [build_inputs(processor, x0_path, q, model.device)
                             for q in make_paraphrase_questions(caption, args.template_set, question)]
-                xa, margins = pgd_eot_max(model, q_inputs, builder, x0, yes_ids, no_ids, eps, alpha,
+                xa, margins = pgd_eot_max(model, q_inputs, builder, x0, a_yes, a_no, eps, alpha,
                                           args.num_steps, active_transforms,
-                                          include_identity=not args.eot_defense_only, init_delta=init)
+                                          include_identity=not args.eot_defense_only, init_delta=init, goal=goal)
                 adv = tensor_to_pil(xa)
                 attack_info = {"yes_margin_per_question": [round(m, 3) for m in margins]}
                 del q_inputs
@@ -660,15 +678,18 @@ def main():
             # Attack success is judged without any defense
             if "none" not in preds:
                 preds["none"] = predict_path(model, processor, adv_path, a_question, args.max_new_tokens)
-            rec["attacks"][atk] = {"preds": preds, "votes": votes, "success": preds["none"] != "Yes"}
+            # success = the undefended model flips from the right answer to the wrong one
+            rec["attacks"][atk] = {"preds": preds, "votes": votes,
+                                   "success": clean_pred == gt and preds["none"] != gt}
             if attack_info:
                 rec["attacks"][atk]["attack_info"] = attack_info
-            line.append(f"{atk}:{'OK' if preds['none'] != 'Yes' else '--'}")
+            line.append(f"{atk}:{'OK' if rec['attacks'][atk]['success'] else '--'}")
             gc.collect()
             torch.cuda.empty_cache()
 
         results.append(rec)
-        print(f"  [{i+1}/{len(subset)}] " + " ".join(line) + f" ({time.time() - s0:.1f}s)", flush=True)
+        print(f"  [{i+1}/{len(subset)}] gt={gt:3s} clean={clean_pred} " + " ".join(line)
+              + f" ({time.time() - s0:.1f}s)", flush=True)
         del x0, x0_inputs
         gc.collect()
         torch.cuda.empty_cache()
@@ -698,6 +719,32 @@ def main():
             unanimous = sum(r["preds"]["tq_unanimous"] for r in results)
             summary["tq_flag_for_review_rate"] = 1 - unanimous / len(results) if results else None
             print(f"tq votes not unanimous (would go to human review): {len(results) - unanimous}/{len(results)}")
+    elif args.attack_all:
+        n = len(results)
+        gts = [r["ground_truth"] for r in results]
+        n_correct = sum(r["clean_pred"] == r["ground_truth"] for r in results)
+        summary["protocol"] = "attack_all"
+        summary["clean_acc_none"] = n_correct / n if n else None
+        print(f"All images attacked (hateful -> No, benign -> Yes): n={n} {dict(Counter(gts))}; "
+              f"undefended clean accuracy {n_correct}/{n}")
+        print("Table: accuracy under attack (higher = better); [hateful / benign] in brackets")
+        summary["table"] = {}
+        for atk in attacks:
+            rows = [r["attacks"][atk] for r in results]
+            succ = sum(x["success"] for x in rows)
+            row = {"attack_success_rate": succ / n_correct if n_correct else None, "by_class": {}}
+            cells = []
+            for k in keys:
+                ok = [x["preds"].get(k) == g for x, g in zip(rows, gts)]
+                acc_h = [o for o, g in zip(ok, gts) if g == "Yes"]
+                acc_b = [o for o, g in zip(ok, gts) if g == "No"]
+                row[k] = sum(ok) / n
+                row["by_class"][k] = {"hateful": sum(acc_h) / len(acc_h) if acc_h else None,
+                                      "benign": sum(acc_b) / len(acc_b) if acc_b else None}
+                cells.append(f"{k}={row[k]:.1%}[{row['by_class'][k]['hateful'] or 0:.0%}/"
+                             f"{row['by_class'][k]['benign'] or 0:.0%}]")
+            summary["table"][atk] = row
+            print(f"  {atk:12s} success={row['attack_success_rate'] or 0:.1%} " + " ".join(cells))
     else:
         n = len(results)
         print(f"Hateful memes the model originally detected: {n}")

@@ -113,6 +113,12 @@ def main():
     with open(args.clean_json, encoding="utf-8") as f:
         clean = json.load(f)
     a_res, c_res = attack["results"], clean["results"]
+    attack_all = attack["config"].get("attack_all", False)
+    a_all = a_res
+    if attack_all:
+        # significance uses every image (correct = matches the label); the other sections use hateful memes only
+        a_res = [r for r in a_res if r["ground_truth"] == "Yes"]
+        print(f"attack_all file: significance on all {len(a_all)} images, other sections on {len(a_res)} hateful")
     t_attack = attack["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
     t_clean = clean["config"].get("tq_transforms", ",".join(TRANSFORM_NAMES)).split(",")
     t_names = t_attack if t_attack == t_clean else None
@@ -127,7 +133,7 @@ def main():
                 for slot in get_slot(r):
                     slot["preds"]["main_anyq"] = tq_from_votes(slot["votes"]["tq"], idx, (0, 1, 2))[1]
         if all(t in t_attack for t in main_t) and all(t in t_clean for t in main_t):
-            add_main(a_res, t_attack, lambda r: r["attacks"].values())
+            add_main(a_all, t_attack, lambda r: r["attacks"].values())
             add_main(c_res, t_clean, lambda r: [r])
             pairs = [("main_anyq", "none"), ("main_anyq", "jpeg"), ("main_anyq", "text_anyyes"),
                      ("main_anyq", "tq_anyq")] + pairs
@@ -150,7 +156,7 @@ def main():
         for k in GATE_Q:
             for r in c_res:
                 add_gate(r, rc, k)
-            for r in a_res:
+            for r in a_all:
                 for slot in r["attacks"].values():
                     add_gate(slot, ra, k)
         if main_t == ["resize50"]:
@@ -162,18 +168,22 @@ def main():
     sig_rows = []
     print("===== Paired comparisons (McNemar exact) =====")
     for atk in attacks:
-        preds = [r["attacks"][atk]["preds"] for r in a_res]
+        src = a_all if attack_all else a_res
+        preds = [r["attacks"][atk]["preds"] for r in src]
+        want = [r["ground_truth"] for r in src] if attack_all else ["Yes"] * len(src)
         n = len(preds)
         for a, b in pairs:
             if a not in preds[0] or b not in preds[0]:
                 continue
-            ya = [p[a] == "Yes" for p in preds]
-            yb = [p[b] == "Yes" for p in preds]
+            ya = [p[a] == w for p, w in zip(preds, want)]
+            yb = [p[b] == w for p, w in zip(preds, want)]
             only_a = sum(x and not y for x, y in zip(ya, yb))
             only_b = sum(y and not x for x, y in zip(ya, yb))
             lo, hi = wilson(sum(ya), n)
             pval = mcnemar_exact(only_a, only_b)
-            sig_rows.append({"setting": f"attack:{atk}", "metric": "still detected (gt=Yes)", "A": a, "B": b,
+            sig_rows.append({"setting": f"attack:{atk}",
+                             "metric": "accuracy under attack (all)" if attack_all else "still detected (gt=Yes)",
+                             "A": a, "B": b,
                              "A_rate": f"{sum(ya) / n:.1%}", "A_95CI": f"{lo:.1%}-{hi:.1%}",
                              "B_rate": f"{sum(yb) / n:.1%}", "only_A_right": only_a, "only_B_right": only_b,
                              "p_value": round(pval, 4)})

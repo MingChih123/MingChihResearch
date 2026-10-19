@@ -153,13 +153,18 @@ def robust_attack_tables(files):
     for path in files:
         d = load(path)
         n = len(d["results"])
+        all_mode = d["summary"].get("protocol") == "attack_all"
         for atk, r in d["summary"].get("table", {}).items():
             row = {"file": os.path.basename(path), "attacked_memes": n, "attack": atk,
                    "attack_success": pct(r.get("attack_success_rate"))}
             for k, v in r.items():
                 if k not in ("attack_success_rate", "tq_flag_for_review_rate",
-                             "tq_per_question_yes", "tq_all_questions_no"):
-                    row[f"still_detected_{k}"] = pct(v)
+                             "tq_per_question_yes", "tq_all_questions_no", "by_class"):
+                    # attack_all runs report accuracy over all images instead of "still detected"
+                    row[f"{'robust_acc' if all_mode else 'still_detected'}_{k}"] = pct(v)
+            for k, v in r.get("by_class", {}).items():
+                row[f"robust_acc_hateful_{k}"] = pct(v["hateful"])
+                row[f"robust_acc_benign_{k}"] = pct(v["benign"])
             if "tq_flag_for_review_rate" in r:
                 row["tq_flag_for_review"] = pct(r["tq_flag_for_review_rate"])
             # newer runs: per question (majority over transformations) and "all questions No"
