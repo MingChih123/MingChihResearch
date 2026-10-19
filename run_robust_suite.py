@@ -455,6 +455,9 @@ def main():
     parser.add_argument("--dataset_root", type=str, required=True)
     parser.add_argument("--data_file", type=str, default=None, help="use train_vqa.json while developing")
     parser.add_argument("--model_name", type=str, default="qwen2b")
+    parser.add_argument("--offset", type=int, default=0,
+                        help="skip the first K samples after shuffling (use samples never seen during development, "
+                             "e.g. --offset 150 on train in attack mode, --offset 200 in clean mode)")
     parser.add_argument("--num_samples", type=int, default=150,
                         help="attack mode: number of gt=Yes memes to scan; clean mode: mixed memes")
     parser.add_argument("--seed", type=int, default=0)
@@ -525,6 +528,7 @@ def main():
            + ("" if args.clean_only or attacks == DEFAULT_ATTACKS else "_atk-" + "-".join(attacks))
            + ("" if tq_names == list(TRANSFORMS) else "_tq-" + "-".join(tq_names))
            + ("_eotdef" if args.eot_defense_only and not args.clean_only else "")
+           + (f"_off{args.offset}" if args.offset else "")
            + ("_rs" if args.random_start and not args.clean_only else "")
            # text-side defenses get their own file so the main clean/attack files are never overwritten
            + ("_txtdef" if any(d in TEXT_DEFENSES for d in defenses) else "")
@@ -539,6 +543,7 @@ def main():
         data = [d for d in data if d["answer"] == "Yes"]
     rng = random.Random(args.seed)
     rng.shuffle(data)
+    data = data[args.offset:]
     subset = data if args.num_samples == -1 else data[:args.num_samples]
     print(f"Mode: {mode} | {len(subset)} samples from {data_file} | gt counts {dict(Counter(d['answer'] for d in subset))}")
     if not args.clean_only:

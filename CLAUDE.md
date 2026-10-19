@@ -356,6 +356,8 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 2026-10-18 反問結果:失敗。乾淨 neg 誤判 66%、main_neg 82%;caption_inject 下 neg 0%(模型是「相信文字裡說無害」,不是照 Answer No 做);caption_persuade(只說服)成功 91.5%。放棄反問。
 - 攻擊強度(非 adaptive,59 筆):PGD 主方法 ε4/8/16 = 100/96.6/91.5%,不防禦 44.1/39.0/30.5%;PGD_JPEG 主方法 94.9/91.5/89.8%,JPEG 57.6/40.7/44.1%。
 - 2026-10-19:`analyze_robust.py` 加「先判斷再防禦」gate_q0/1/2(離線,用存好的 text + resize50 投票),輸出 `_analysis_gate_<tag>.csv`。
+- gate 結果:沒有額外好處。gate_q2 ≈「resize50 + q2 單問法」(誤判 11.2% vs 10.8%、pgd 86.4% 兩者相同),pgd_eot_max 下 42.4% ≈ 不防禦。結論:主方法分「低誤判版 resize+q2(1 次,誤判 10.8%,pgd 86.4%)」和「高偵測版 resize×3 any(3 次,誤判 21.2%,pgd 96.6%)」。
+- 2026-10-19:加 `--offset K`(檔名 `_off<K>`),用 train 裡開發時沒用過的樣本擴大攻擊樣本數(攻擊模式 train 用過前 150 筆 Yes,乾淨模式用過前 200 筆)。
 - 使用者已用 git 連上 GitHub(`git pull` 更新),不用再下載 ZIP。
 - 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 
