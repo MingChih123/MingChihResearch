@@ -233,6 +233,16 @@ python summarize_all.py
 
 ---
 
+### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
+
+dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
+攻擊模式開發時用了打亂後的前 150 筆 Yes(`--offset 150`),乾淨模式用了前 200 筆(`--offset 200`)。
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 600 --seed 0 --attacks pgd,pgd_jpeg --tq_transforms resize50 --defenses none,jpeg,text,tq
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 1000 --seed 0 --clean_only --tq_transforms resize50 --defenses none,jpeg,text,tq
+```
+
 ## 5. 多個 seed 與「± 區間」
 
 論文裡的 ± 有兩種,意思不一樣,**建議兩種都報**:
