@@ -212,6 +212,7 @@ python analyze_robust.py --attack_json ./output/robust_attack_FB_dev_vqa_Qwen2-V
 | `_table_robust_clean.csv` | 各防禦在正常圖片上的準確率、recall、F1、誤判 |
 | `_analysis_significance_<tag>.csv` | 兩兩比較的 McNemar p 值、95% 信賴區間 |
 | `_analysis_subsets_<tag>.csv` | 只用部分轉換 / 部分問法時的效果(成本分析;含「resize50 + 單一問法」的同成本對照) |
+| `_analysis_gate_<tag>.csv` | 先判斷再防禦(gate_q0/q1/q2):原圖和縮放後答案一致就照原本答案,不一致才用 3 問法 any;報誤判、平均問幾次、攻擊下仍認出比例 |
 | `_analysis_perq_<tag>.csv` | 攻擊後每個問法各自還說 Yes 的比例、三個問法都答 No 的比例(附分母和信賴區間) |
 
 ### 4.5 第二個資料集:HarMeme **val + test**(驗證泛化)

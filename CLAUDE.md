@@ -353,6 +353,9 @@ dev 主表(仍認出比例 / 乾淨圖):
 - image_text 的白條會蓋住原圖下方的迷因文字(使用者發現),新增 `image_text_pad`(多接一條白色區域,不蓋原圖)。
 - image_text_pad 結果(59 筆):攻擊成功 59.3%;主方法 69.5% vs 不防禦 40.7%(18 vs 1,p=0.0001)、vs JPEG 47.5%(p=0.004)、vs 只換問法 57.6%(p=0.039)→ 縮放對「圖上加字」也有貢獻。
 - 2026-10-18:加反問防禦 `neg` / `main_neg`(3 正向 + 1 反問,答 No 才標記)和攻擊 `caption_persuade`(只說服、不下指令),用 `--config_name polar`。風險:模型偏向答 No,反問可能誤判大增。
+- 2026-10-18 反問結果:失敗。乾淨 neg 誤判 66%、main_neg 82%;caption_inject 下 neg 0%(模型是「相信文字裡說無害」,不是照 Answer No 做);caption_persuade(只說服)成功 91.5%。放棄反問。
+- 攻擊強度(非 adaptive,59 筆):PGD 主方法 ε4/8/16 = 100/96.6/91.5%,不防禦 44.1/39.0/30.5%;PGD_JPEG 主方法 94.9/91.5/89.8%,JPEG 57.6/40.7/44.1%。
+- 2026-10-19:`analyze_robust.py` 加「先判斷再防禦」gate_q0/1/2(離線,用存好的 text + resize50 投票),輸出 `_analysis_gate_<tag>.csv`。
 - 使用者已用 git 連上 GitHub(`git pull` 更新),不用再下載 ZIP。
 - 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 
