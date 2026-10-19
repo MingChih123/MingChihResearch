@@ -233,6 +233,18 @@ python summarize_all.py
 
 ---
 
+### 4.5b 全部圖片都攻擊(`--attack_all`,和其他論文同一種格式)
+
+原本只攻擊「模型原本認出的仇恨迷因」(dev 只有 59 筆)。`--attack_all` 改成 500 張全部攻擊:
+仇恨迷因往 No 推、正常迷因往 Yes 推,報「攻擊後的整體準確率」,並分開報仇恨 / 正常各自的準確率(`_table_robust_attack.csv` 的 `robust_acc_*` 欄位)。檔名帶 `_all`。
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attack_all --attacks pgd --tq_transforms resize50 --defenses none,jpeg,text,tq
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attack_all --attacks pgd_jpeg --tq_transforms resize50 --defenses none,jpeg,text,tq
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attack_all --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq
+```
+`pgd_eot_max` 對正常迷因用「只要一個問法被騙成 Yes 就夠」的目標(any 規則下這樣就會被誤標)。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
