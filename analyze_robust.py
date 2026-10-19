@@ -15,6 +15,7 @@
   ./output/_analysis_significance_<tag>.csv
   ./output/_analysis_subsets_<tag>.csv   (含「單一轉換 × 單一問法」:同成本比較「最好的一個問法 + 縮放」)
   ./output/_analysis_perq_<tag>.csv      (每個問法各自還說 Yes 的比例、三個問法都答 No 的比例)
+  ./output/_analysis_gate_<tag>.csv      (先判斷再防禦:原圖和縮放後答案一致就照原本答案,不一致才用 3 問法 any)
 """
 import argparse
 import csv
@@ -67,6 +68,26 @@ def tq_from_votes(grid, t_idx, q_idx):
     return majority(flat), ("Yes" if "Yes" in per_q else "No")
 
 
+GATE_Q = (0, 1, 2)  # which question is used for the consistency check
+
+
+def gate_pred(slot, r_idx, k):
+    """Selective defense (detect-then-defend), rebuilt from saved votes.
+    Ask question k on the raw image and on the resize50 image. If the two answers agree, keep that
+    answer (2 queries). If they disagree, the input may be manipulated: ask the other two questions on
+    the resized image and flag if any resized answer is Yes (4 queries).
+    Returns (prediction, fired, queries)."""
+    raw = slot["votes"]["text"][k]
+    resized = [slot["votes"]["tq"][str(q)][r_idx] for q in range(3)]
+    if raw == resized[k]:
+        return raw if raw in ("Yes", "No") else "No", False, 2
+    return ("Yes" if "Yes" in resized else "No"), True, 4
+
+
+def has_gate_votes(slot):
+    return "text" in slot["votes"] and "tq" in slot["votes"]
+
+
 def write_csv(path, rows):
     if not rows:
         return
@@ -114,6 +135,27 @@ def main():
         else:
             print(f"[WARN] --main_transforms {main_t} not found in the saved votes; skipped")
     attacks = list(a_res[0]["attacks"].keys()) if a_res else []
+
+    # Selective defense rebuilt from saved votes (needs raw-image text votes and resize50 tq votes)
+    gate_ok = ("resize50" in t_attack and "resize50" in t_clean and a_res and c_res
+               and has_gate_votes(c_res[0]) and all(has_gate_votes(a_res[0]["attacks"][a]) for a in attacks))
+    gate_rows = []
+    if gate_ok:
+        ra, rc = t_attack.index("resize50"), t_clean.index("resize50")
+        def add_gate(slot, r_idx, k):
+            pred, fired, queries = gate_pred(slot, r_idx, k)
+            slot["preds"][f"gate_q{k}"] = pred
+            slot.setdefault("gate_info", {})[k] = (fired, queries)
+
+        for k in GATE_Q:
+            for r in c_res:
+                add_gate(r, rc, k)
+            for r in a_res:
+                for slot in r["attacks"].values():
+                    add_gate(slot, ra, k)
+        if main_t == ["resize50"]:
+            pairs = [(f"gate_q{k}", b) for k in GATE_Q for b in ("none", "main_anyq")] + pairs
+        print("gate_q0/1/2 = detect-then-defend (raw vs resize50 consistency on question k), rebuilt from saved votes")
     gts = [r["ground_truth"] for r in c_res]
 
     # ---------- 1. significance ----------
@@ -233,7 +275,34 @@ def main():
             print(f"  {atk:12s} {src:28s} " + " ".join(f"{k}={v}" for k, v in row.items()
                                                        if k.startswith("q") or k == "all_questions_no"))
 
+    # ---------- 4. selective defense: how often the gate fires, cost, and results ----------
+    if gate_ok:
+        print("\n===== Detect-then-defend (gate) =====")
+        n_neg = sum(g == "No" for g in gts)
+        n_pos = len(gts) - n_neg
+        for k in GATE_Q:
+            info = [r["gate_info"][k] for r in c_res]
+            p = [r["preds"][f"gate_q{k}"] for r in c_res]
+            tp = sum(x == "Yes" and g == "Yes" for x, g in zip(p, gts))
+            fp = sum(x == "Yes" and g == "No" for x, g in zip(p, gts))
+            row = {"rule": f"gate_q{k}", "clean_acc": f"{sum(x == g for x, g in zip(p, gts)) / len(gts):.1%}",
+                   "clean_recall": f"{tp / max(1, n_pos):.1%}",
+                   "clean_false_alarm": f"{fp / max(1, n_neg):.1%} ({fp}/{n_neg})",
+                   "clean_gate_fired": f"{sum(f for f, _ in info) / len(info):.1%}",
+                   "clean_avg_queries": round(sum(q for _, q in info) / len(info), 2)}
+            for atk in attacks:
+                slots = [r["attacks"][atk] for r in a_res]
+                det = sum(sl["preds"][f"gate_q{k}"] == "Yes" for sl in slots)
+                fired = sum(sl["gate_info"][k][0] for sl in slots)
+                row[f"{atk}_still_detected"] = f"{det / len(slots):.1%} ({det}/{len(slots)})"
+                row[f"{atk}_gate_fired"] = f"{fired / len(slots):.1%}"
+            gate_rows.append(row)
+            print("  " + " | ".join(f"{a}={b}" for a, b in row.items()))
+    else:
+        print("\n(gate analysis skipped: needs the text defense and resize50 in the tq votes of both files)")
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    write_csv(os.path.join(OUTPUT_DIR, f"_analysis_gate_{args.tag}.csv"), gate_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_significance_{args.tag}.csv"), sig_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_subsets_{args.tag}.csv"), sub_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_perq_{args.tag}.csv"), perq_rows)
