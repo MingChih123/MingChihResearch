@@ -359,6 +359,8 @@ dev 主表(仍認出比例 / 乾淨圖):
 - gate 結果:沒有額外好處。gate_q2 ≈「resize50 + q2 單問法」(誤判 11.2% vs 10.8%、pgd 86.4% 兩者相同),pgd_eot_max 下 42.4% ≈ 不防禦。結論:主方法分「低誤判版 resize+q2(1 次,誤判 10.8%,pgd 86.4%)」和「高偵測版 resize×3 any(3 次,誤判 21.2%,pgd 96.6%)」。
 - 2026-10-19:加 `--offset K`(檔名 `_off<K>`),用 train 裡開發時沒用過的樣本擴大攻擊樣本數(攻擊模式 train 用過前 150 筆 Yes,乾淨模式用過前 200 筆)。
 - 2026-10-19:讀了 RAMPART(訓練式,CLIP+LoRA 對抗微調+RGCL,FB 測試 1000 張全部攻擊,ε=1/255,報 ACC/AUC;乾淨 FB acc 75.1%)。加 `--attack_all`(全部圖都攻擊:仇恨→No、正常→Yes,報整體/分類別準確率,檔名 `_all`),讓主表和其他論文同格式。簡報不要寫「學姊的論文」,寫 RAMPART / 先前研究。
+- 2026-10-27 attack_all + pgd_eot_max(只針對 resize,500 張,仇恨→No、正常→Yes,goal=any 對正常迷因):整體準確率 none 51.0% / jpeg 53.6% / text_anyyes 50.0% / tq_majority 45.0% / **主方法 42.2%(比不防禦還低)**;主方法 仇恨 26.0%、正常 58.4%(乾淨時 78.8%)→ any 規則讓攻擊者只要騙到一個問法就能冤枉正常迷因,是主方法在 adaptive 下的主要弱點。
+- 讀了 F3(ACM MM 2025,training-free,用注意力+梯度加雜訊淨化,測 Qwen2.5-VL-3B 等,有 adaptive AutoAttack;R&P 隨機縮放補邊在 adaptive 下只有 43.08)與 VALD(2026,圖片描述任務,轉換偵測 + Gemma-3-27B 整合)。建議論文定位為「仇恨迷因審核情境下 training-free 推論階段防禦的系統性評估 + 一個簡單方法」,F3 列為主要比較對象(github.com/btzyd/F3)。
 - 使用者已用 git 連上 GitHub(`git pull` 更新),不用再下載 ZIP。
 - 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 
