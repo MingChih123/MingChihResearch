@@ -361,6 +361,10 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 2026-10-19:讀了 RAMPART(訓練式,CLIP+LoRA 對抗微調+RGCL,FB 測試 1000 張全部攻擊,ε=1/255,報 ACC/AUC;乾淨 FB acc 75.1%)。加 `--attack_all`(全部圖都攻擊:仇恨→No、正常→Yes,報整體/分類別準確率,檔名 `_all`),讓主表和其他論文同格式。簡報不要寫「學姊的論文」,寫 RAMPART / 先前研究。
 - 2026-10-27 attack_all + pgd_eot_max(只針對 resize,500 張,仇恨→No、正常→Yes,goal=any 對正常迷因):整體準確率 none 51.0% / jpeg 53.6% / text_anyyes 50.0% / tq_majority 45.0% / **主方法 42.2%(比不防禦還低)**;主方法 仇恨 26.0%、正常 58.4%(乾淨時 78.8%)→ any 規則讓攻擊者只要騙到一個問法就能冤枉正常迷因,是主方法在 adaptive 下的主要弱點。
 - 讀了 F3(ACM MM 2025,training-free,用注意力+梯度加雜訊淨化,測 Qwen2.5-VL-3B 等,有 adaptive AutoAttack;R&P 隨機縮放補邊在 adaptive 下只有 43.08)與 VALD(2026,圖片描述任務,轉換偵測 + Gemma-3-27B 整合)。建議論文定位為「仇恨迷因審核情境下 training-free 推論階段防禦的系統性評估 + 一個簡單方法」,F3 列為主要比較對象(github.com/btzyd/F3)。
+- 2026-10-28:使用者決定主軸是「提出新方法」。新增(都在 `run_robust_suite.py`,`_v2def`):
+  - `f3`:F3 移植到 Qwen2-VL(`f3_purify`,參考官方 `models/LLaVA.py::purify_f3`;用最後一個 prompt 位置對圖片 token 的注意力,α=16/255、β=32/255;讀注意力時暫時切 eager)。尚未實作「知道 F3 的攻擊」。
+  - `cons`(新方法,暫名「多視角共識 + 人工審核」):K=4 個隨機縮放視角(比例 0.4~0.6、隨機放大方法)× 3 問法;迷因文字拿掉一句(沒標點時拿前半/後半)再問;Yes 票比例 ≥ high → Yes、≤ low → No、中間 → Review;圖片判 No 但某個拿掉一句的版本多數 Yes → Review。門檻預設 0.2 / 0.5,要在 train 上用 `_analysis_cons_<tag>.csv` 選。指標:無聲失誤率(有把握但錯)、人工審核率、自動判斷準確率。
+  - `pgd_eot_cons`:知道 cons 的攻擊,每步從同一隨機分布抽 `--eot_views` 個視角,壓低平均 Yes 分數(推動多數)。
 - 使用者已用 git 連上 GitHub(`git pull` 更新),不用再下載 ZIP。
 - 使用者的資料夾已搬到 `C:\Users\USER\Desktop\MChih_Exp\Exp`(舊的是 `C:\Users\USER\OneDrive\Desktop\MChih_Exp\2`)。
 

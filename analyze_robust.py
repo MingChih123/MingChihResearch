@@ -16,6 +16,8 @@
   ./output/_analysis_subsets_<tag>.csv   (含「單一轉換 × 單一問法」:同成本比較「最好的一個問法 + 縮放」)
   ./output/_analysis_perq_<tag>.csv      (每個問法各自還說 Yes 的比例、三個問法都答 No 的比例)
   ./output/_analysis_gate_<tag>.csv      (先判斷再防禦:原圖和縮放後答案一致就照原本答案,不一致才用 3 問法 any)
+  ./output/_analysis_cons_<tag>.csv      (新方法 cons:不同門檻下的人工審核率、無聲失誤率、自動判斷準確率;
+                                          門檻要在 train 上選,dev 只報選好的那一組)
 """
 import argparse
 import csv
@@ -86,6 +88,37 @@ def gate_pred(slot, r_idx, k):
 
 def has_gate_votes(slot):
     return "text" in slot["votes"] and "tq" in slot["votes"]
+
+
+CONS_LOWS = (0.0, 0.1, 0.2, 0.3)
+CONS_HIGHS = (0.4, 0.5, 0.6, 0.7, 0.8, 1.0)
+
+
+def cons_decide(cv, low, high, use_loso=True):
+    """Same rule as run_robust_suite.consensus_decision, recomputed from saved votes."""
+    flat = [v for row in cv["img"] for v in row if v in ("Yes", "No")]
+    score = sum(v == "Yes" for v in flat) / len(flat) if flat else 0.0
+    if score >= high:
+        return "Yes"
+    loso_yes = use_loso and any(majority(row) == "Yes" for row in cv["loso"])
+    if score <= low and not loso_yes:
+        return "No"
+    return "Review"
+
+
+def three_way_stats(decisions, gts):
+    n = len(gts)
+    conf = [(d, g) for d, g in zip(decisions, gts) if d in ("Yes", "No")]
+    hate = [d for d, g in zip(decisions, gts) if g == "Yes"]
+    ben = [d for d, g in zip(decisions, gts) if g == "No"]
+    return {
+        "review_rate": sum(d == "Review" for d in decisions) / n,
+        "silent_error_rate": sum(d != g for d, g in conf) / n,
+        "auto_acc": sum(d == g for d, g in conf) / len(conf) if conf else None,
+        "hateful_caught": sum(d != "No" for d in hate) / len(hate) if hate else None,  # Yes or Review
+        "benign_false_yes": sum(d == "Yes" for d in ben) / len(ben) if ben else None,
+        "benign_review": sum(d == "Review" for d in ben) / len(ben) if ben else None,
+    }
 
 
 def write_csv(path, rows):
@@ -311,7 +344,39 @@ def main():
     else:
         print("\n(gate analysis skipped: needs the text defense and resize50 in the tq votes of both files)")
 
+    # ---------- 5. new method (cons): threshold grid from saved votes ----------
+    cons_rows = []
+    clean_has = bool(c_res) and "cons" in c_res[0].get("votes", {})
+    atk_has = {atk: bool(a_all) and "cons" in a_all[0]["attacks"][atk]["votes"] for atk in attacks}
+    if clean_has or any(atk_has.values()):
+        pct_ = lambda v: "" if v is None else f"{v:.1%}"
+        for use_loso in (True, False):
+            for low in CONS_LOWS:
+                for high in CONS_HIGHS:
+                    if low >= high:
+                        continue
+                    row = {"low": low, "high": high, "loso_dissent": use_loso}
+                    if clean_has:
+                        st = three_way_stats([cons_decide(r["votes"]["cons"], low, high, use_loso) for r in c_res],
+                                             [r["ground_truth"] for r in c_res])
+                        for k, v in st.items():
+                            row[f"clean_{k}"] = pct_(v)
+                    for atk in attacks:
+                        if not atk_has[atk]:
+                            continue
+                        st = three_way_stats(
+                            [cons_decide(r["attacks"][atk]["votes"]["cons"], low, high, use_loso) for r in a_all],
+                            [r["ground_truth"] for r in a_all])
+                        for k in ("silent_error_rate", "review_rate", "auto_acc"):
+                            row[f"{atk}_{k}"] = pct_(st[k])
+                    cons_rows.append(row)
+        print("\n===== New method (cons): thresholds (choose on train, report on dev) =====")
+        for row in cons_rows:
+            if row["loso_dissent"] and row["low"] in (0.1, 0.2) and row["high"] in (0.5, 0.6):
+                print("  " + " | ".join(f"{k}={v}" for k, v in row.items()))
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    write_csv(os.path.join(OUTPUT_DIR, f"_analysis_cons_{args.tag}.csv"), cons_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_gate_{args.tag}.csv"), gate_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_significance_{args.tag}.csv"), sig_rows)
     write_csv(os.path.join(OUTPUT_DIR, f"_analysis_subsets_{args.tag}.csv"), sub_rows)

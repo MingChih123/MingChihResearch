@@ -245,6 +245,21 @@ python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --atta
 ```
 `pgd_eot_max` 對正常迷因用「只要一個問法被騙成 Yes 就夠」的目標(any 規則下這樣就會被誤標)。
 
+### 4.5c 新方法 `cons` 與比較對象 `f3`(2026-10-28)
+
+- `f3`:F3(ACM MM 2025)移植到 Qwen2-VL-2B。
+- `cons`:多視角共識 + 人工審核(隨機縮放視角 × 3 問法 + 拿掉一句再問 + 三種結果 Yes / No / Review)。
+- `pgd_eot_cons`:知道 `cons` 的攻擊(對隨機視角分布取期望,壓低多數票)。
+- 用到 `f3` / `cons` 的檔名帶 `_v2def`;門檻用 `analyze_robust.py` 的 `_analysis_cons_<tag>.csv` 在 **train** 上選。
+
+```bash
+# A. 小測試(dev 20 張,確認 F3 不會爆顯存、cons 正常)
+python -u run_robust_suite.py --dataset_root FB --num_samples 20 --seed 0 --attack_all --attacks pgd --tq_transforms resize50 --defenses none,tq,cons,f3 --config_name smoke
+# B. train 上選門檻(開發時沒用過的樣本)
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 300 --seed 0 --clean_only --tq_transforms resize50 --defenses none,tq,cons,f3
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 100 --seed 0 --attack_all --attacks pgd,pgd_eot_cons,caption_persuade --tq_transforms resize50 --defenses none,tq,cons,f3
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
