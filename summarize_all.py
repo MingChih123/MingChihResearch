@@ -165,6 +165,10 @@ def robust_attack_tables(files):
             for k, v in r.get("by_class", {}).items():
                 row[f"robust_acc_hateful_{k}"] = pct(v["hateful"])
                 row[f"robust_acc_benign_{k}"] = pct(v["benign"])
+            rv = d["summary"].get("review", {}).get(atk)
+            if rv:  # three-way method (cons)
+                row["cons_review_rate"] = pct(rv["review_rate"])
+                row["cons_silent_error_rate"] = pct(rv["silent_error_rate"])
             if "tq_flag_for_review_rate" in r:
                 row["tq_flag_for_review"] = pct(r["tq_flag_for_review_rate"])
             # newer runs: per question (majority over transformations) and "all questions No"
@@ -187,6 +191,9 @@ def robust_clean_tables(files):
                          "TP": m["TP"], "FN": m["FN"], "FP": m["FP"], "TN": m["TN"],
                          "fixed": m.get("fixed", ""), "harmed": m.get("harmed", ""),
                          "tq_flag_for_review": pct(s.get("tq_flag_for_review_rate"))})
+            if k == "cons" and s.get("review", {}).get("clean"):  # three-way method
+                rows[-1]["cons_review_rate"] = pct(s["review"]["clean"]["review_rate"])
+                rows[-1]["cons_silent_error_rate"] = pct(s["review"]["clean"]["silent_error_rate"])
     return rows
 
 
