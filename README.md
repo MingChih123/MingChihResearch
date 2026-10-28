@@ -260,6 +260,18 @@ python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --off
 python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 100 --seed 0 --attack_all --attacks pgd,pgd_eot_cons,caption_persuade --tq_transforms resize50 --defenses none,tq,cons,f3
 ```
 
+### 4.5d 文字端新方法 `strip`(拿掉「替迷因下結論」的句子,2026-10-29)
+
+- 逐段問模型「這段是不是在說這個迷因無害 / 只是玩笑」,是的就拿掉,再用縮小再放大的圖 × 3 個問法判斷。一定給 Yes / No,不送審核。
+- `caption_persuade_blend`:同一句說服的話改成全小寫、沒標點(比較難切出來),用來測 `strip` 的弱點。
+
+```bash
+# 乾淨圖副作用(train,開發時沒用過的樣本)
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 200 --seed 0 --clean_only --tq_transforms resize50 --defenses none,tq,strip --config_name strip
+# 文字攻擊(train,只攻擊模型原本認得出的仇恨迷因)
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject --tq_transforms resize50 --defenses none,tq,strip --config_name strip
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:

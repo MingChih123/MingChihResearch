@@ -477,4 +477,7 @@ dev 主表(仍認出比例 / 乾淨圖):
   - caption_persuade:全部防禦都救不回仇恨(5~20%);cons 的拿掉一句只能把 18% 送審核。
   - f3 還沒有針對它的攻擊,數字偏樂觀。
   - analyze_robust.py 修正:pgd_eot_cons 的 attack_info 沒有 yes_margin_per_question,原本會 KeyError。
+- 2026-10-29:使用者不想用「送人工審核」當主方法(覺得不負責任)→ 主結果一律強制 Yes/No。離線重算 cons 強制版(Yes 票比例 ≥ t 判 Yes):pgd_eot_cons 下最好 68.3%(t=1.0),t=0.5 是 61.7%。
+  注意公平比較:pgd_eot_cons 只打隨機視角,不防禦那欄 70% 沒有被針對;不防禦對上針對它的 pgd 是 65.0% → cons 強制版和不防禦差不多,沒有明顯好處。
+- 2026-10-29:新增文字端 `strip`(METHOD_DEFENSES,檔名 _v2def):逐段問「這段是不是在替迷因下結論(無害 / 玩笑 / 不是仇恨)」,拿掉後用 resize50 × 3 問法判斷(strip = 多數決、strip_any = 任一)。新增攻擊 `caption_persuade_blend`(說服句改小寫、去標點,測切段弱點)。指令見 README 4.5d。
 
