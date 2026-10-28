@@ -470,3 +470,11 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 動手改既有檔案前先說明改什麼;已經跑出數據的實驗腳本盡量不要破壞,新功能用新參數或新檔案加。
 - 有數字看起來太好或太怪時,先指出疑點再往下做。
 - 報告用的簡報講稿裡**不要出現「學姊的論文」**這類說法。
+- 2026-10-28 train 選門檻結果(offset 200;乾淨 200 張、attack_all 60 張 = 仇恨 20 / 正常 40,樣本小):
+  - 乾淨:none 76.5%(這段 train 比 dev 簡單)、tq_majority 78.5%、tq_anyq 74.0%(FP 9→24)、cons 74.0%(Review 7% 算錯;自動判斷準確率 79.6%、無聲失誤 19%)、f3 74.0%(recall 46→42%)。
+  - pgd:none 65.0 / tq_majority 78.3 / tq_anyq 76.7 / cons 71.7 / f3 75.0。攻擊成功率只有 17%(train 這段比較難打)。
+  - **pgd_eot_cons(針對 cons):cons 58.3% < none 70.0%**,無聲失誤 35%;壞在正常迷因(benign 82.5→62.5%)。門檻怎麼調,最好也只有無聲失誤 25%(high=1.0,幾乎等於要全票才判 Yes)→ 調門檻救不了,cons 要改設計。
+  - caption_persuade:全部防禦都救不回仇恨(5~20%);cons 的拿掉一句只能把 18% 送審核。
+  - f3 還沒有針對它的攻擊,數字偏樂觀。
+  - analyze_robust.py 修正:pgd_eot_cons 的 attack_info 沒有 yes_margin_per_question,原本會 KeyError。
+

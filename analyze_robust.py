@@ -299,7 +299,7 @@ def main():
             if main_t and all(t in t_attack for t in main_t) and main_t != t_attack:
                 idx = [t_attack.index(t) for t in main_t]
                 sources.append((f"main ({'+'.join(main_t)})", [per_q(s["votes"]["tq"], idx) for s in slots]))
-        if "attack_info" in slots[0]:
+        if "yes_margin_per_question" in slots[0].get("attack_info", {}):
             # the attacker's own Yes margins (before saving to PNG); margin < 0 means that question says No
             sources.append(("attacker margins", [["Yes" if m >= 0 else "No"
                                                   for m in s["attack_info"]["yes_margin_per_question"]]
