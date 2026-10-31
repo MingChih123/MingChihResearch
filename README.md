@@ -272,6 +272,14 @@ python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --off
 python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject --tq_transforms resize50 --defenses none,tq,strip --config_name strip
 ```
 
+**2026-10-31 更新**:第一版 `strip` 的檢查幾乎每段都說「是」(乾淨圖 98% 的段落被拿掉),等於把文字全拿掉,
+數字好看是因為模型自己讀圖上的字。現在預設改成第 2 版(只給文字 + 例子),並加對照組 `nocap`(完全不給文字)。
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 200 --num_samples 200 --seed 0 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,image_text_pad --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
