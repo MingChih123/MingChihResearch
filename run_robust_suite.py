@@ -69,6 +69,8 @@
          --strip_version 2(預設,2026-10-31):逐段檢查改成「只給文字、不給圖」+ 幾個例子的問法。
            version 1 是第一版(帶圖問),實測幾乎每段都說是(乾淨圖 98% 的段落被拿掉),等於把文字全部拿掉,
            只留著重現舊結果用。
+  dual   (要同時開 strip 和 nocap)strip 多數決 或 nocap 多數決 有一個說仇恨就判仇恨(2026-11-02):
+           攻擊者只能改送進來的文字時,nocap 那一路完全不看那段文字,所以改文字騙不到它
   nocap  對照組:完全不給迷因文字(問題裡的文字是空的),縮小再放大的圖 × 3 個問法
            nocap = 多數決、nocap_any = 任一說 Yes;模型只能自己讀圖上的字
   攻擊 pgd_eot_cons:知道 cons 的攻擊者。每一步從同樣的隨機分布抽 --eot_views 張視角,
@@ -791,6 +793,10 @@ def run_defenses(model, processor, img_path, question, caption, defenses, args, 
         preds["nocap"], preds["nocap_any"], votes["nocap"] = nocap_defense(
             model, processor, img_path, question, caption, args, work_dir, tag)
 
+    if "strip" in defenses and "nocap" in defenses:
+        # dual: two readings of the meme text (cleaned caption / no caption at all); hateful if either says so
+        preds["dual"] = "Yes" if "Yes" in (preds["strip"], preds["nocap"]) else "No"
+
     if "main_safe" in defenses:
         clean_cap = normalize_text(caption)
         safe_qs = [GUARD_PREFIX + q for q in make_paraphrase_questions(
@@ -829,7 +835,7 @@ def defense_keys(defenses):
         elif d == "strip":
             keys += ["strip", "strip_any"]
         elif d == "nocap":
-            keys += ["nocap", "nocap_any"]
+            keys += ["nocap", "nocap_any"] + (["dual"] if "strip" in defenses else [])
         else:
             keys.append(d)
     return list(dict.fromkeys(keys))
