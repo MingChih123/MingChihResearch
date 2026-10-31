@@ -480,4 +480,8 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 2026-10-29:使用者不想用「送人工審核」當主方法(覺得不負責任)→ 主結果一律強制 Yes/No。離線重算 cons 強制版(Yes 票比例 ≥ t 判 Yes):pgd_eot_cons 下最好 68.3%(t=1.0),t=0.5 是 61.7%。
   注意公平比較:pgd_eot_cons 只打隨機視角,不防禦那欄 70% 沒有被針對;不防禦對上針對它的 pgd 是 65.0% → cons 強制版和不防禦差不多,沒有明顯好處。
 - 2026-10-29:新增文字端 `strip`(METHOD_DEFENSES,檔名 _v2def):逐段問「這段是不是在替迷因下結論(無害 / 玩笑 / 不是仇恨)」,拿掉後用 resize50 × 3 問法判斷(strip = 多數決、strip_any = 任一)。新增攻擊 `caption_persuade_blend`(說服句改小寫、去標點,測切段弱點)。指令見 README 4.5d。
+- 2026-10-31 strip 第一版結果(train,44 筆仇恨迷因;乾淨 200 張):caption_persuade 下 none 6.8% / tq_anyq 27.3% / **strip 90.9%**;blend 84.1%;caption_inject 90.9%;乾淨 strip 78.5%(= tq_majority)。
+  **但數字是假象**:檢查器幾乎每段都說是(乾淨圖 344/352 段被拿掉、196/200 張文字全空)→ strip v1 ≈ 不給文字,模型自己讀圖上的字。
+  真正的發現:攻擊只改「送進來的文字」時,不給文字就救得回來;但 FB 的文字本來就是圖上的字,現實中攻擊者要改文字就得寫在圖上(= image_text_pad),那時不給文字沒用。
+  處理:`--strip_version 2`(預設)改成只給文字 + 例子(例子措辭和攻擊句不同);新增對照組 `nocap`;summary 會印 strip 拿掉的比例(乾淨圖應該接近 0)。指令見 README 4.5d,config_name strip2,攻擊加 image_text_pad。
 
