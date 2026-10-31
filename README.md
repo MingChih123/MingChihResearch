@@ -280,6 +280,12 @@ python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --off
 python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,image_text_pad --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
 ```
 
+**2026-11-01 知道 strip 的攻擊 `caption_evade`**(攻擊者試 10 種開脫的說法,挑檢查器抓不到、又騙得過模型的那句):
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_evade --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
