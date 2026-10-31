@@ -485,3 +485,11 @@ dev 主表(仍認出比例 / 乾淨圖):
   真正的發現:攻擊只改「送進來的文字」時,不給文字就救得回來;但 FB 的文字本來就是圖上的字,現實中攻擊者要改文字就得寫在圖上(= image_text_pad),那時不給文字沒用。
   處理:`--strip_version 2`(預設)改成只給文字 + 例子(例子措辭和攻擊句不同);新增對照組 `nocap`;summary 會印 strip 拿掉的比例(乾淨圖應該接近 0)。指令見 README 4.5d,config_name strip2,攻擊加 image_text_pad。
 
+- 2026-11-01 strip v2 結果(train;乾淨 200 張、攻擊 44 筆仇恨迷因,config strip2):
+  - 乾淨:strip 拿掉 0% 的段落,準確率 78.5% = tq_majority(沒有副作用);nocap 也是 78.5%(FB 的圖說就是圖上的字,模型自己讀得到)。
+  - 仍認出比例:caption_persuade none 6.8 / tq_majority 4.5 / tq_anyq 27.3 / **strip 95.5** / strip_any 100 / nocap 93.2;
+    caption_persuade_blend 4.5 / 9.1 / 54.5 / **77.3** / 88.6 / 93.2;caption_inject 2.3 / 0 / 4.5 / **97.7** / 100 / 93.2;
+    image_text_pad(字寫在圖上)63.6 / 75.0 / 93.2 / strip 75.0 / strip_any 93.2 / **nocap 54.5(會輸)**。
+  - 攻擊時被拿掉的段落 20~35%(幾乎都是加進去的句子);blend 有 9/44 沒拿乾淨 → 混進原文是弱點。
+  - 結論:strip 是目前唯一擋得住圖說說服 / 注入、又不傷乾淨圖、字寫在圖上時也不比主方法差的方法。nocap 在圖說攻擊下一樣強,但字在圖上時掉到 54.5%。
+  - 還沒做:知道 strip 的攻擊(換說法躲過檢查器、改寫成不像免責聲明的句子)、dev 上的正式結果、HarMeme。
