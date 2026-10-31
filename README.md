@@ -286,6 +286,13 @@ python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --off
 python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --offset 150 --num_samples 100 --seed 0 --attacks caption_evade --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
 ```
 
+**2026-11-02 dev 正式結果(`dual` = strip 或 nocap 有一個說仇恨就判仇恨)**:
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
