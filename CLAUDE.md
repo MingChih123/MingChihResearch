@@ -497,3 +497,8 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 2026-11-02 caption_evade 結果(train 44 筆):攻擊成功(對不防禦)61.4%,不防禦剩 38.6%;**strip 的檢查器完全被躲過(拿掉 0%)**,strip 75.0% = tq_majority 75.0%(保護全來自縮放 + 換問法);strip_any 95.5%、nocap 93.2%。拐彎的開脫句比較騙不過模型(不防禦 38.6% vs 直白句 6.8%)。注意:攻擊者是對「不防禦」挑句子,不是對 strip 整條流程挑,還不是最強版。
   - 使用者疑問:乾淨 76.5% 和攻擊下 6.8%→95.5% 不是同一種數字(前者 200 張混合的準確率;後者是 44 張原本認得出的仇恨迷因裡還認得出的比例)。乾淨圖 strip 78.5% 的 +2 來自縮放 + 換問法,不是 strip(乾淨圖一段都沒拿掉)。
   - 離線算 dual(strip 多數決 OR nocap 多數決):乾淨 79.5%(FP 11 vs 不防禦 9、tq_anyq 24);caption_persuade 97.7 / blend 95.5 / inject 97.7 / evade 97.7 / image_text_pad 75.0。理由:只改送進來的文字時,nocap 那一路根本不看文字。已加成 defense key `dual`(strip + nocap 都開才有)。下一步:dev 正式結果(README 4.5d)。
+- 2026-11-02 ★ dev 正式結果(strip2,乾淨 500 張、攻擊 59 筆仇恨迷因):
+  - 乾淨:none 59.2% / FP 13;tq_majority 62.4% / FP 22;tq_anyq 64.4% / FP 53;strip 62.2%(拿掉 0%);nocap 60.8%;**dual 62.6% / recall 35.6% / FP 26(10.4%)**。dual vs none McNemar 30 vs 13 p=0.014;vs tq_anyq 27 vs 36 p=0.31。
+  - 仍認出(none / tq_anyq / strip / nocap / **dual**):persuade 8.5 / 15.3 / 94.9 / 93.2 / **100**;blend 8.5 / 44.1 / 72.9 / 93.2 / **98.3**;inject 1.7 / 1.7 / 96.6 / 93.2 / **96.6**;evade 11.9 / 89.8 / 64.4 / 93.2 / **96.6**;image_text_pad 40.7 / **69.5** / 52.5 / 42.4 / 59.3。
+  - dual vs none 四種圖說攻擊全部 p<0.001(50~56 vs 0);dual vs tq_anyq:persuade / blend / inject p<0.001,evade 5 vs 1 p=0.22;image_text_pad dual 輸 tq_anyq(1 vs 7,p=0.07)。
+  - 結論:dual 是圖說攻擊的主方法(結構上:只改送進來的文字騙不到 nocap 那一路);字寫在圖上時 tq_anyq 比較好 → 限制。train 和 dev 結論一致。
