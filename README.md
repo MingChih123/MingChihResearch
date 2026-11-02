@@ -293,6 +293,12 @@ python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --clea
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
 ```
 
+**2026-11-03 整體準確率版本(全部 500 張都加上攻擊,和乾淨準確率同一把尺)**:
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attack_all --attacks caption_persuade,caption_evade,image_text_pad --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name strip2
+```
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
