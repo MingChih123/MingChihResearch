@@ -511,3 +511,4 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 離線比較(dev,看 dev 選的,只能當探索):strip_any|nocap 乾淨 64.4% / FP 53,image_text_pad 71.2%;any_both 64.0% / FP 59 / 74.6%;dual 62.6% / FP 26 / 59.3% → 想撐「字寫在圖上」就要付約兩倍誤判,沒有免費的改進。
   - 結構性質:只改送進來的文字時,dual 的仍認出率 ≥ nocap 自己在乾淨圖上的認出率(nocap 根本不看那段文字)→ 可以當論文的保證。
   - 使用者要整體準確率:新增 README 4.5d 的 attack_all 指令(500 張全部加攻擊,報整體 / 仇恨 / 正常準確率)。
+- 2026-11-03:使用者要全部重跑,把舊 output 改名成 output2 備份。最終清單見 README 4.5e(config_name final,所有防禦含 strip / nocap / dual / f3 在同一批圖上跑)。robust_images / adv 圖只是中間產物,結果都在 json,可以不留。
