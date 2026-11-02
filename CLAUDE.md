@@ -512,3 +512,4 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 結構性質:只改送進來的文字時,dual 的仍認出率 ≥ nocap 自己在乾淨圖上的認出率(nocap 根本不看那段文字)→ 可以當論文的保證。
   - 使用者要整體準確率:新增 README 4.5d 的 attack_all 指令(500 張全部加攻擊,報整體 / 仇恨 / 正常準確率)。
 - 2026-11-03:使用者要全部重跑,把舊 output 改名成 output2 備份。最終清單見 README 4.5e(config_name final,所有防禦含 strip / nocap / dual / f3 在同一批圖上跑)。robust_images / adv 圖只是中間產物,結果都在 json,可以不留。
+- 2026-11-03:新增圖文同時攻擊 `pgd_persuade`(迷因文字加 persuade_text,PGD 在加了那句話的問題上算)。最終清單 README 4.5e 共 8 個指令(FB 5、HarMeme 3)。
