@@ -502,3 +502,8 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 仍認出(none / tq_anyq / strip / nocap / **dual**):persuade 8.5 / 15.3 / 94.9 / 93.2 / **100**;blend 8.5 / 44.1 / 72.9 / 93.2 / **98.3**;inject 1.7 / 1.7 / 96.6 / 93.2 / **96.6**;evade 11.9 / 89.8 / 64.4 / 93.2 / **96.6**;image_text_pad 40.7 / **69.5** / 52.5 / 42.4 / 59.3。
   - dual vs none 四種圖說攻擊全部 p<0.001(50~56 vs 0);dual vs tq_anyq:persuade / blend / inject p<0.001,evade 5 vs 1 p=0.22;image_text_pad dual 輸 tq_anyq(1 vs 7,p=0.07)。
   - 結論:dual 是圖說攻擊的主方法(結構上:只改送進來的文字騙不到 nocap 那一路);字寫在圖上時 tq_anyq 比較好 → 限制。train 和 dev 結論一致。
+- 2026-11-02 HarMeme 結果(strip2,valtest 531 張;攻擊只有 23 筆,CI 很寬):
+  - 乾淨:none 67.4% / recall 12.4% / FP 11;tq_anyq 67.8% / FP 18;strip 68.9% / 20.0% / FP 17;nocap 67.2% / 10.3%;**dual 69.1% / recall 20.5% / FP 17**。strip 乾淨拿掉 0%。
+  - 仍認出(none / tq_anyq / strip / nocap / dual):persuade 0 / 8.7 / 91.3 / 69.6 / **95.7**;blend 0 / 8.7 / 91.3 / 69.6 / **91.3**;inject 0 / 4.3 / 82.6 / 69.6 / **91.3**;evade 4.3 / 52.2 / 69.6 / 69.6 / **87.0**;image_text_pad 17.4 / 30.4 / 34.8 / 21.7 / **39.1**。
+  - HarMeme 上 nocap 比 FB 弱(69.6% vs 93.2%,HarMeme 圖上字比較難讀),dual 靠兩路互補仍最好 → 兩個資料集結論一致。
+  - 「dual」是 Claude 取的程式內部名稱,不是現成論文的方法名;論文要自己命名。
