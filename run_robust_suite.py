@@ -27,6 +27,8 @@
   image_text_pad  同樣的字,但是在圖片下面「多接一條」白色區域再寫字,不蓋住原圖任何地方
   caption_persuade 迷因文字最後加一句「說服」的話,但不叫模型回答什麼(--persuade_text)
   caption_persuade_blend 同一句話,但改成全小寫、拿掉標點再接上去(混進原文,比較難切出來;針對 strip 的測試)
+  pgd_persuade    圖文同時攻擊(2026-11-03):迷因文字加 --persuade_text,而且 PGD 是在「加了那句話」的問題上算的
+                  (圖片和文字一起往同一個方向推)
   caption_evade   【知道 strip 的攻擊,2026-11-01】攻擊者有一份 10 句「替迷因開脫」的句子(有的直白、有的拐彎抹角,
                   例如「我那個族群的朋友傳給我的」),逐句試:先用 strip 同一個檢查器看會不會被抓,
                   沒被抓、而且能讓不防禦的模型答 No 的那句就用它;都不行就用第一個沒被抓到的(再不行用最後一句)
@@ -134,7 +136,7 @@ TEXT_DEFENSES = ["norm", "guard", "main_safe", "neg", "main_neg"]
 ALL_DEFENSES = ALL_DEFENSES + TEXT_DEFENSES
 METHOD_DEFENSES = ["f3", "cons", "strip", "nocap"]  # baseline F3, consensus-with-review, claim stripping
 ALL_DEFENSES = ALL_DEFENSES + METHOD_DEFENSES
-ALL_ATTACKS += ["pgd_eot_cons"]
+ALL_ATTACKS += ["pgd_eot_cons", "pgd_persuade"]
 CONS_INTERPS = {"bicubic": Image.BICUBIC, "bilinear": Image.BILINEAR, "lanczos": Image.LANCZOS}
 
 # Latin letter -> look-alike Cyrillic letter (used by the homoglyph attack)
@@ -1048,6 +1050,13 @@ def main():
                                                  args.cons_scale_min, args.cons_scale_max, init_delta=init)
                 adv = tensor_to_pil(xa)
                 del q_inputs
+            elif atk == "pgd_persuade":
+                p_cap = (caption.rstrip() + " " + args.persuade_text) if caption else args.persuade_text
+                p_inputs = build_inputs(processor, x0_path, swap_caption(question, caption, p_cap), model.device)
+                xa, _ = pgd_image_space(model, p_inputs, builder, x0, a_yes, a_no, eps, alpha, args.num_steps,
+                                        init_delta=init)
+                adv = tensor_to_pil(xa)
+                del p_inputs
             elif atk == "saltpepper":
                 adv = salt_pepper(x0_pil, args.saltpepper_amount, np_rng)
             elif atk == "spread":
@@ -1064,7 +1073,7 @@ def main():
                 a_caption = homoglyph_text(caption, args.homoglyph_rate, random.Random(args.seed * 7919 + i))
             elif atk == "caption_inject":
                 a_caption = (caption.rstrip() + " " + args.inject_text) if caption else args.inject_text
-            elif atk == "caption_persuade":
+            elif atk in ("caption_persuade", "pgd_persuade"):
                 a_caption = (caption.rstrip() + " " + args.persuade_text) if caption else args.persuade_text
             elif atk == "caption_evade":
                 a_caption, attack_info = evade_caption(model, processor, x0_path, question, caption, args)

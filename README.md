@@ -307,13 +307,14 @@ python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --atta
 # FB dev
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --clean_only --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
-python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd,pgd_jpeg,saltpepper,spread --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd,pgd_jpeg,pgd_persuade,saltpepper,spread --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
 # FB dev 整體準確率版本(500 張全部加攻擊)
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attack_all --attacks caption_persuade,caption_evade,image_text_pad --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap --config_name final
 # HarMeme(val+test)
 python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --clean_only --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
-python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad,pgd,pgd_jpeg --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
+python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad,pgd,pgd_jpeg,pgd_persuade --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
+python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
 ```
 
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
