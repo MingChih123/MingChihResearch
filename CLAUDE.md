@@ -520,3 +520,8 @@ dev 主表(仍認出比例 / 乾淨圖):
   - attack_all 整體準確率(none / tq_anyq / dual;乾淨 dual 62.6):persuade 51.0/51.4/**62.6**(= 乾淨,攻擊完全無效);evade 51.0/62.4/62.2;image_text_pad 53.8/56.6/55.6。
   - F3 擋不了任何圖說攻擊(1.7~35.6%),乾淨 59.0 和不防禦一樣。
   - 離線:dual_any(strip_any OR nocap)乾淨 64.4 / FP53(= tq_anyq 同誤判),圖說攻擊 98~100、pgd 96.6、pgd_jpeg 94.9、pgd_persuade 96.6、pgd_eot_max 72.9 → 同誤判成本下全面 ≥ 舊主方法 tq_anyq(pgd_persuade 96.6 vs 5.1)。是看 dev 後組的,要用 HarMeme 當驗證。已加 pred key `dual_any`。
+- 2026-11-05 ★ HarMeme final(#36 版跑的,沒有 dual_any key → 離線用 strip_any OR nocap 算;乾淨 531 張 / 攻擊 23 張):
+  - 乾淨:none 67.4 / rec 12.4 / FP11;tq_anyq 67.8 / FP18;f3 68.4 / FP17;**dual 69.1 / rec 20.5 / FP17**;dual_any 68.0 / FP25。
+  - 仍認出(none / tq_anyq / f3 / dual / dual_any):persuade 0/8.7/13.0/95.7/100;blend 0/8.7/13.0/91.3/95.7;inject 0/4.3/8.7/91.3/95.7;evade 4.3/52.2/43.5/87.0/95.7;image_text_pad 17.4/30.4/30.4/39.1/56.5;pgd 26.1/91.3/95.7/82.6/95.7;pgd_jpeg 56.5/91.3/87.0/78.3/91.3;pgd_persuade 0/8.7/4.3/78.3/91.3;pgd_eot_max(只 9 張被打成功)60.9/60.9/100(沒被針對)/52.2/69.6。
+  - HarMeme 上 dual 和 tq_anyq 誤判數一樣(17 vs 18),dual 幾乎每項 ≥ tq_anyq → dual_any 的「事後組合」在 HarMeme 也成立(held-out 驗證)。
+  - 使用者偏好少誤判 → 主方法用 dual(標準版),dual_any 當高偵測版。週五要 4~5 分鐘進度報告。
