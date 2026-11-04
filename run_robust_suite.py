@@ -798,6 +798,8 @@ def run_defenses(model, processor, img_path, question, caption, defenses, args, 
     if "strip" in defenses and "nocap" in defenses:
         # dual: two readings of the meme text (cleaned caption / no caption at all); hateful if either says so
         preds["dual"] = "Yes" if "Yes" in (preds["strip"], preds["nocap"]) else "No"
+        # dual_any: high-detection variant (any question on the cleaned-caption path, or the no-caption path)
+        preds["dual_any"] = "Yes" if "Yes" in (preds["strip_any"], preds["nocap"]) else "No"
 
     if "main_safe" in defenses:
         clean_cap = normalize_text(caption)
@@ -837,7 +839,7 @@ def defense_keys(defenses):
         elif d == "strip":
             keys += ["strip", "strip_any"]
         elif d == "nocap":
-            keys += ["nocap", "nocap_any"] + (["dual"] if "strip" in defenses else [])
+            keys += ["nocap", "nocap_any"] + (["dual", "dual_any"] if "strip" in defenses else [])
         else:
             keys.append(d)
     return list(dict.fromkeys(keys))
