@@ -513,3 +513,10 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 使用者要整體準確率:新增 README 4.5d 的 attack_all 指令(500 張全部加攻擊,報整體 / 仇恨 / 正常準確率)。
 - 2026-11-03:使用者要全部重跑,把舊 output 改名成 output2 備份。最終清單見 README 4.5e(config_name final,所有防禦含 strip / nocap / dual / f3 在同一批圖上跑)。robust_images / adv 圖只是中間產物,結果都在 json,可以不留。
 - 2026-11-03:新增圖文同時攻擊 `pgd_persuade`(迷因文字加 persuade_text,PGD 在加了那句話的問題上算)。最終清單 README 4.5e 共 8 個指令(FB 5、HarMeme 3)。
+- 2026-11-04 ★ FB final 結果(config final;乾淨 500、攻擊 59、attack_all 500;和之前的數字完全一致 → 可重現):
+  - 乾淨:none 59.2 / FP13;jpeg 58.8;text 61.0;tq_majority 62.4 / FP22;tq_anyq 64.4 / FP53;strip 62.2;nocap 60.8;**dual 62.6 / FP26**;f3 59.0 / FP14。
+  - 仍認出(none / tq_anyq / f3 / dual):persuade 8.5/15.3/6.8/**100**;blend 8.5/44.1/8.5/**98.3**;inject 1.7/1.7/1.7/**96.6**;evade 11.9/89.8/35.6/**96.6**;image_text_pad 40.7/69.5/45.8/59.3;
+    pgd 33.9/96.6/72.9/84.7;pgd_jpeg 44.1/94.9/78.0/81.4;**pgd_persuade(圖文同時)1.7/5.1/6.8/89.8**;saltpepper 88.1/100/71.2/93.2;spread 71.2/93.2/64.4/88.1;pgd_eot_max 47.5/74.6/74.6(F3 沒被針對)/55.9。
+  - attack_all 整體準確率(none / tq_anyq / dual;乾淨 dual 62.6):persuade 51.0/51.4/**62.6**(= 乾淨,攻擊完全無效);evade 51.0/62.4/62.2;image_text_pad 53.8/56.6/55.6。
+  - F3 擋不了任何圖說攻擊(1.7~35.6%),乾淨 59.0 和不防禦一樣。
+  - 離線:dual_any(strip_any OR nocap)乾淨 64.4 / FP53(= tq_anyq 同誤判),圖說攻擊 98~100、pgd 96.6、pgd_jpeg 94.9、pgd_persuade 96.6、pgd_eot_max 72.9 → 同誤判成本下全面 ≥ 舊主方法 tq_anyq(pgd_persuade 96.6 vs 5.1)。是看 dev 後組的,要用 HarMeme 當驗證。已加 pred key `dual_any`。
