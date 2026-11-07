@@ -317,6 +317,14 @@ python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/val
 python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks pgd_eot_max --tq_transforms resize50 --eot_defense_only --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
 ```
 
+**2026-11-07 補充:圖文同時攻擊 `image_text_persuade`(圖上寫字 + 文字加開脫句)與最終表格**
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --attacks image_text_persuade --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final & python -u run_robust_suite.py --dataset_root HarMeme --data_file annotations/valtest_vqa.json --num_samples -1 --seed 0 --attacks image_text_persuade --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
+python make_final_tables.py
+```
+`make_final_tables.py` 讀 output/ 裡所有 `*_final.json`,寫出 `output/_FINAL_TABLES.md`(準確率、仍認出率、95% CI、McNemar)。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
