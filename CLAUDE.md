@@ -525,3 +525,7 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 仍認出(none / tq_anyq / f3 / dual / dual_any):persuade 0/8.7/13.0/95.7/100;blend 0/8.7/13.0/91.3/95.7;inject 0/4.3/8.7/91.3/95.7;evade 4.3/52.2/43.5/87.0/95.7;image_text_pad 17.4/30.4/30.4/39.1/56.5;pgd 26.1/91.3/95.7/82.6/95.7;pgd_jpeg 56.5/91.3/87.0/78.3/91.3;pgd_persuade 0/8.7/4.3/78.3/91.3;pgd_eot_max(只 9 張被打成功)60.9/60.9/100(沒被針對)/52.2/69.6。
   - HarMeme 上 dual 和 tq_anyq 誤判數一樣(17 vs 18),dual 幾乎每項 ≥ tq_anyq → dual_any 的「事後組合」在 HarMeme 也成立(held-out 驗證)。
   - 使用者偏好少誤判 → 主方法用 dual(標準版),dual_any 當高偵測版。週五要 4~5 分鐘進度報告。
+- 2026-11-07:新增 `make_final_tables.py`(讀 output/*_final.json → output/_FINAL_TABLES.md,含 Wilson CI 與 McNemar;dual_any 舊檔用 strip_any OR nocap 補算)。repo 裡 `FINAL_TABLES.md` 是用目前 FB + HarMeme final 檔產生的版本。
+  - 注意:FB 乾淨圖 dual_any 和 tq_anyq 完全一樣(125 / 53),因為乾淨圖 strip 一段都沒拿掉 → strip_any = tq_anyq,nocap 沒多抓到新的。
+  - 新增攻擊 `image_text_persuade`(圖上加字 + 文字加開脫句,兩路都看得到,雙路讀取最壞情況),待跑(README 4.5e 補充)。
+  - 使用者疑問:輸入放迷因上的文字算不算作弊 → 不算,FB 資料集附文字、領域標準做法;HarMeme 的文字是有錯字的 OCR(例:"Thank youl witor comdaveschreber"),FB 是乾淨文字 → 兩種品質都測過了;nocap 那一路本身就是「沒有 OCR」的設定。
