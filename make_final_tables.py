@@ -69,7 +69,8 @@ def ci_cell(k, n):
 
 
 def dataset_of(d):
-    return d["config"]["dataset_root"]
+    model = d["config"].get("model_name", "qwen2b")
+    return d["config"]["dataset_root"] + ("" if model == "qwen2b" else f" ({model})")
 
 
 def main():

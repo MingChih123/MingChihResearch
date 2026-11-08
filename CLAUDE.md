@@ -531,3 +531,4 @@ dev 主表(仍認出比例 / 乾淨圖):
   - 使用者疑問:輸入放迷因上的文字算不算作弊 → 不算,FB 資料集附文字、領域標準做法;HarMeme 的文字是有錯字的 OCR(例:"Thank youl witor comdaveschreber"),FB 是乾淨文字 → 兩種品質都測過了;nocap 那一路本身就是「沒有 OCR」的設定。
 - 2026-11-08 image_text_persuade(圖上加字 + 文字加開脫句)結果:FB 59 張 none 3.4 / tq_anyq 8.5 / f3 3.4 / strip 52.5 / nocap 42.4 / **dual 59.3** / dual_any 71.2;HarMeme 23 張 none 0 / tq_anyq 4.3 / f3 0 / dual 34.8 / dual_any 60.9。
   dual 和只有 image_text_pad 時一樣(FB 59.3)→ 文字裡那句被 strip 完全中和,剩下的弱點就是「字寫在圖上」。其他方法全倒(0~8.5%)。FINAL_TABLES.md 已更新。
+- 2026-11-08:換模型先用 Qwen2-VL-7B(config 已有 qwen7b 別名,不用改程式;Qwen2.5-VL-3B 要升級 transformers + 8GB 放不下 bf16,需 4-bit 量化,風險高,先不做)。README 4.5f:先 5 張測時間,再跑乾淨 200 張 + 4 種文字攻擊(--min_pixels 65536 --max_pixels 200704)。make_final_tables.py 依 (資料集, 模型) 分節。
