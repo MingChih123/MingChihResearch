@@ -325,6 +325,21 @@ python make_final_tables.py
 ```
 `make_final_tables.py` 讀 output/ 裡所有 `*_final.json`,寫出 `output/_FINAL_TABLES.md`(準確率、仍認出率、95% CI、McNemar)。
 
+### 4.5f 換模型:Qwen2-VL-7B(2026-11-08,只跑文字攻擊,不用梯度)
+
+8GB 顯存放不下 7B,Windows 會借用系統記憶體,所以很慢;一定要降解析度。先跑 5 張測時間:
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples 5 --seed 0 --model_name qwen7b --min_pixels 65536 --max_pixels 200704 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name final7b_test
+```
+
+時間可以接受再跑正式的(乾淨圖先跑 200 張):
+
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples 200 --seed 0 --model_name qwen7b --min_pixels 65536 --max_pixels 200704 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name final & python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name qwen7b --min_pixels 65536 --max_pixels 200704 --attacks caption_persuade,caption_inject,caption_evade,image_text_persuade --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name final
+```
+`make_final_tables.py` 會把 7B 的結果分開成「FB (qwen7b)」一節。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
