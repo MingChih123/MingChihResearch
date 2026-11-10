@@ -532,3 +532,9 @@ dev 主表(仍認出比例 / 乾淨圖):
 - 2026-11-08 image_text_persuade(圖上加字 + 文字加開脫句)結果:FB 59 張 none 3.4 / tq_anyq 8.5 / f3 3.4 / strip 52.5 / nocap 42.4 / **dual 59.3** / dual_any 71.2;HarMeme 23 張 none 0 / tq_anyq 4.3 / f3 0 / dual 34.8 / dual_any 60.9。
   dual 和只有 image_text_pad 時一樣(FB 59.3)→ 文字裡那句被 strip 完全中和,剩下的弱點就是「字寫在圖上」。其他方法全倒(0~8.5%)。FINAL_TABLES.md 已更新。
 - 2026-11-08:換模型先用 Qwen2-VL-7B(config 已有 qwen7b 別名,不用改程式;Qwen2.5-VL-3B 要升級 transformers + 8GB 放不下 bf16,需 4-bit 量化,風險高,先不做)。README 4.5f:先 5 張測時間,再跑乾淨 200 張 + 4 種文字攻擊(--min_pixels 65536 --max_pixels 200704)。make_final_tables.py 依 (資料集, 模型) 分節。
+- 2026-11-10 ★ 7B 結果(Qwen2-VL-7B,FB dev;乾淨 200 張 = 仇恨 93 / 正常 107;攻擊:120 張仇恨裡模型原本認得出 50 張):
+  - 乾淨:none 76.5% / 抓到 59/93 / FP 13(12.1%);tq_anyq 72.0% / 69 / FP 32;**dual 75.5% / 68/93 / FP 24(22.4%)**;dual vs none p=0.82(準確率沒顯著變差),dual vs tq_anyq p=0.039。7B 上 dual_any = tq_anyq。
+  - 仍認出(none / tq_anyq / dual):persuade 38 / 76 / **100**;evade 74 / 100 / **100**(7B 上 evade 很弱,攻擊成功只 26%);image_text_persuade 12 / 72 / **80**。
+  - 7B 本身比 2B 不容易被說服(persuade 成功 62% vs 2B 91.5%),但仍會被打;dual 在換模型後結論一致。
+  - 代價:7B 上 dual 的誤判比不防禦多(13 → 24,12% → 22%),要誠實寫。F3 沒在 7B 跑(表上 p vs F3 是 -)。
+  - 實驗部分到此大致完成,接下來寫論文(表格見 FINAL_TABLES.md)。
