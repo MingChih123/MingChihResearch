@@ -1,6 +1,11 @@
 # Final tables (config_name final)
 
-Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual-Channel (ours) vs that method (paired on the same memes).
+How to read:
+- Numbers in [ ] are 95% Wilson confidence intervals.
+- p = McNemar exact test, Dual-Channel (ours) vs that method, paired on the same memes; (b vs c) = memes only ours gets right vs memes only the other method gets right.
+- Attack success = share of the attacked hateful memes that the attack flips to "No" when there is no defense.
+- Dual-Channel-High can equal Resize-and-Rephrase on clean memes: on clean memes the excuse detector removes nothing, so its Channel 1 sees the same input as Resize-and-Rephrase.
+- A method missing from a section was not run for that dataset / model.
 
 ## FB
 
@@ -26,13 +31,13 @@ Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual
 | Inject (caption) | 98.3% | 1.7% | 1.7% | 1.7% | 1.7% | 96.6% [88–99] | 100.0% | <0.001 (56 vs 0) | <0.001 (56 vs 0) | <0.001 (56 vs 0) |
 | Evade (caption, adaptive) | 88.1% | 11.9% | 30.5% | 89.8% | 35.6% | 96.6% [88–99] | 98.3% | <0.001 (50 vs 0) | 0.219 (5 vs 1) | <0.001 (36 vs 0) |
 | Text-in-image | 59.3% | 40.7% | 47.5% | 69.5% | 45.8% | 59.3% [47–71] | 71.2% | 0.013 (14 vs 3) | 0.070 (1 vs 7) | 0.115 (14 vs 6) |
+| Text-in-image + Persuade | 96.6% | 3.4% | 1.7% | 8.5% | 3.4% | 59.3% [47–71] | 71.2% | <0.001 (34 vs 1) | <0.001 (30 vs 0) | <0.001 (34 vs 1) |
 | PGD | 66.1% | 33.9% | 69.5% | 96.6% | 72.9% | 84.7% [73–92] | 96.6% | <0.001 (30 vs 0) | 0.016 (0 vs 7) | 0.065 (9 vs 2) |
 | PGD-JPEG | 55.9% | 44.1% | 45.8% | 94.9% | 78.0% | 81.4% [70–89] | 94.9% | <0.001 (23 vs 1) | 0.008 (0 vs 8) | 0.754 (6 vs 4) |
 | PGD + Persuade | 98.3% | 1.7% | 5.1% | 5.1% | 6.8% | 89.8% [80–95] | 96.6% | <0.001 (52 vs 0) | <0.001 (50 vs 0) | <0.001 (50 vs 1) |
 | Salt & pepper | 11.9% | 88.1% | 86.4% | 100.0% | 71.2% | 93.2% [84–97] | 98.3% | 0.508 (6 vs 3) | 0.125 (0 vs 4) | 0.004 (16 vs 3) |
 | Spread | 28.8% | 71.2% | 78.0% | 93.2% | 64.4% | 88.1% [77–94] | 94.9% | 0.006 (11 vs 1) | 0.375 (1 vs 4) | <0.001 (15 vs 1) |
 | PGD-EOT (adaptive) | 52.5% | 47.5% | 69.5% | 74.6% | 74.6% | 55.9% [43–68] | 72.9% | 0.227 (8 vs 3) | <0.001 (0 vs 11) | 0.013 (3 vs 14) |
-| Text-in-image + Persuade | 96.6% | 3.4% | 1.7% | 8.5% | 3.4% | 59.3% [47–71] | 71.2% | <0.001 (34 vs 1) | <0.001 (30 vs 0) | <0.001 (34 vs 1) |
 
 ### C. Overall accuracy when every meme is attacked (500 memes)
 
@@ -41,6 +46,27 @@ Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual
 | Persuade (caption) | 51.0% | 50.8% | 51.4% | 62.6% | 64.4% |
 | Evade (caption, adaptive) | 51.0% | 54.2% | 62.4% | 62.2% | 63.4% |
 | Text-in-image | 53.8% | 55.0% | 56.6% | 55.6% | 56.8% |
+
+## FB (qwen7b)
+
+### A. Clean memes (no attack): 200 memes (93 hateful / 107 benign)
+
+| Method | Accuracy | Hateful caught | Benign wrongly flagged | p (acc, vs ours) |
+|---|---|---|---|---|
+| No defense | 76.5% [70–82] | 59/93 (63.4%) | 13/107 (12.1%) | 0.824 |
+| Resize-and-Rephrase (old) | 72.0% [65–78] | 69/93 (74.2%) | 32/107 (29.9%) | 0.039 |
+| Dual-Channel (ours) | 75.5% [69–81] | 68/93 (73.1%) | 24/107 (22.4%) |
+| Dual-Channel-High (ours) | 72.0% [65–78] | 69/93 (74.2%) | 32/107 (29.9%) | 0.039 |
+
+### B. Detection rate under attack: 50 hateful memes
+
+50 = hateful memes the model correctly detects before any attack. Cell = share still detected after the attack (higher is better).
+
+| Attack | Attack success | No defense | Resize-and-Rephrase (old) | Dual-Channel (ours) | Dual-Channel-High (ours) | p vs none | p vs old |
+|---|---|---|---|---|---|---|---|
+| Persuade (caption) | 62.0% | 38.0% | 76.0% | 100.0% [93–100] | 100.0% | <0.001 (31 vs 0) | <0.001 (12 vs 0) |
+| Evade (caption, adaptive) | 26.0% | 74.0% | 100.0% | 100.0% [93–100] | 100.0% | <0.001 (13 vs 0) | 1.000 (0 vs 0) |
+| Text-in-image + Persuade | 88.0% | 12.0% | 72.0% | 80.0% [67–89] | 84.0% | <0.001 (34 vs 0) | 0.219 (5 vs 1) |
 
 ## HarMeme
 
@@ -69,6 +95,6 @@ Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual
 | PGD | 73.9% | 26.1% | 73.9% | 91.3% | 95.7% | 82.6% [63–93] | 95.7% | <0.001 (13 vs 0) | 0.625 (1 vs 3) | 0.375 (1 vs 4) |
 | PGD-JPEG | 43.5% | 56.5% | 30.4% | 91.3% | 87.0% | 78.3% [58–90] | 91.3% | 0.180 (7 vs 2) | 0.250 (0 vs 3) | 0.688 (2 vs 4) |
 | PGD + Persuade | 100.0% | 0.0% | 0.0% | 8.7% | 4.3% | 78.3% [58–90] | 91.3% | <0.001 (18 vs 0) | <0.001 (16 vs 0) | <0.001 (17 vs 0) |
-| PGD-EOT (adaptive) | 39.1% | 60.9% | 82.6% | 60.9% | 100.0% | 52.2% [33–71] | 69.6% | 0.688 (2 vs 4) | 0.500 (0 vs 2) | <0.001 (0 vs 11) |
 | Text-in-image + Persuade | 100.0% | 0.0% | 0.0% | 4.3% | 0.0% | 34.8% [19–55] | 60.9% | 0.008 (8 vs 0) | 0.016 (7 vs 0) | 0.008 (8 vs 0) |
+| PGD-EOT (adaptive) | 39.1% | 60.9% | 82.6% | 60.9% | 100.0% | 52.2% [33–71] | 69.6% | 0.688 (2 vs 4) | 0.500 (0 vs 2) | <0.001 (0 vs 11) |
 
