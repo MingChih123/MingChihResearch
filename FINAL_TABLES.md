@@ -1,6 +1,11 @@
 # Final tables (config_name final)
 
-Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual-Channel (ours) vs that method (paired on the same memes).
+How to read:
+- Numbers in [ ] are 95% Wilson confidence intervals.
+- p = McNemar exact test, Dual-Channel (ours) vs that method, paired on the same memes; (b vs c) = memes only ours gets right vs memes only the other method gets right.
+- Attack success = share of the attacked hateful memes that the attack flips to "No" when there is no defense.
+- Dual-Channel-High can equal Resize-and-Rephrase on clean memes: on clean memes the excuse detector removes nothing, so its Channel 1 sees the same input as Resize-and-Rephrase.
+- A method missing from a section was not run for that dataset / model.
 
 ## FB
 
@@ -50,18 +55,18 @@ Numbers in [ ] are 95% Wilson confidence intervals. p = McNemar exact test, Dual
 |---|---|---|---|---|
 | No defense | 76.5% [70–82] | 59/93 (63.4%) | 13/107 (12.1%) | 0.824 |
 | Resize-and-Rephrase (old) | 72.0% [65–78] | 69/93 (74.2%) | 32/107 (29.9%) | 0.039 |
-| Dual-Channel (ours) | 75.5% [69–81] | 68/93 (73.1%) | 24/107 (22.4%) | - |
+| Dual-Channel (ours) | 75.5% [69–81] | 68/93 (73.1%) | 24/107 (22.4%) |
 | Dual-Channel-High (ours) | 72.0% [65–78] | 69/93 (74.2%) | 32/107 (29.9%) | 0.039 |
 
 ### B. Detection rate under attack: 50 hateful memes
 
 50 = hateful memes the model correctly detects before any attack. Cell = share still detected after the attack (higher is better).
 
-| Attack | Attack success | No defense | Resize-and-Rephrase (old) | Dual-Channel (ours) | Dual-Channel-High (ours) | p vs none | p vs old | p vs F3 |
-|---|---|---|---|---|---|---|---|---|
-| Persuade (caption) | 62.0% | 38.0% | 76.0% | 100.0% [93–100] | 100.0% | <0.001 (31 vs 0) | <0.001 (12 vs 0) | - |
-| Evade (caption, adaptive) | 26.0% | 74.0% | 100.0% | 100.0% [93–100] | 100.0% | <0.001 (13 vs 0) | 1.000 (0 vs 0) | - |
-| Text-in-image + Persuade | 88.0% | 12.0% | 72.0% | 80.0% [67–89] | 84.0% | <0.001 (34 vs 0) | 0.219 (5 vs 1) | - |
+| Attack | Attack success | No defense | Resize-and-Rephrase (old) | Dual-Channel (ours) | Dual-Channel-High (ours) | p vs none | p vs old |
+|---|---|---|---|---|---|---|---|
+| Persuade (caption) | 62.0% | 38.0% | 76.0% | 100.0% [93–100] | 100.0% | <0.001 (31 vs 0) | <0.001 (12 vs 0) |
+| Evade (caption, adaptive) | 26.0% | 74.0% | 100.0% | 100.0% [93–100] | 100.0% | <0.001 (13 vs 0) | 1.000 (0 vs 0) |
+| Text-in-image + Persuade | 88.0% | 12.0% | 72.0% | 80.0% [67–89] | 84.0% | <0.001 (34 vs 0) | 0.219 (5 vs 1) |
 
 ## HarMeme
 

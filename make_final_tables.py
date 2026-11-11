@@ -80,8 +80,14 @@ def main():
         return
     data = [json.load(open(f, encoding="utf-8")) for f in files]
     lines = ["# Final tables (config_name final)", "",
-             "Numbers in [ ] are 95% Wilson confidence intervals. "
-             "p = McNemar exact test, Dual-Channel (ours) vs that method (paired on the same memes).", ""]
+             "How to read:",
+             "- Numbers in [ ] are 95% Wilson confidence intervals.",
+             "- p = McNemar exact test, Dual-Channel (ours) vs that method, paired on the same memes;"
+             " (b vs c) = memes only ours gets right vs memes only the other method gets right.",
+             "- Attack success = share of the attacked hateful memes that the attack flips to \"No\" when there is no defense.",
+             "- Dual-Channel-High can equal Resize-and-Rephrase on clean memes: on clean memes the excuse detector"
+             " removes nothing, so its Channel 1 sees the same input as Resize-and-Rephrase.",
+             "- A method missing from a section was not run for that dataset / model.", ""]
     for ds in sorted({dataset_of(d) for d in data}):
         lines += [f"## {ds}", ""]
         # A. clean
@@ -119,9 +125,11 @@ def main():
                       "Cell = share still detected after the attack (higher is better).", ""]
             keys = [(k, nm) for k, nm in METHODS if k in att[0]["results"][0]["attacks"][
                 next(iter(att[0]["results"][0]["attacks"]))]["preds"] or k == "dual_any"]
+            key_set = {k for k, _ in keys}
+            p_cols = [(k, lab) for k, lab in (("none", "none"), ("tq_anyq", "old"), ("f3", "F3")) if k in key_set]
             lines += ["| Attack | Attack success | " + " | ".join(nm for _, nm in keys) +
-                      " | p vs none | p vs old | p vs F3 |",
-                      "|---|---|" + "---|" * len(keys) + "---|---|---|"]
+                      "".join(f" | p vs {lab}" for _, lab in p_cols) + " |",
+                      "|---|---|" + "---|" * (len(keys) + len(p_cols))]
             for d in att:
                 for atk in d["results"][0]["attacks"]:
                     rows = [fill_dual_any(r["attacks"][atk]["preds"]) for r in d["results"]]
@@ -132,13 +140,10 @@ def main():
                         yes[k] = [p.get(k) == "Yes" for p in rows]
                         cells.append(ci_cell(sum(yes[k]), n) if k == "dual" else pct(sum(yes[k]), n))
                     ps = []
-                    for other in ("none", "tq_anyq", "f3"):
-                        if other in yes:
-                            b = sum(o and not x for o, x in zip(yes["dual"], yes[other]))
-                            c = sum(x and not o for o, x in zip(yes["dual"], yes[other]))
-                            ps.append(f"{fmt_p(mcnemar(b, c))} ({b} vs {c})")
-                        else:
-                            ps.append("-")
+                    for other, _ in p_cols:
+                        b = sum(o and not x for o, x in zip(yes["dual"], yes[other]))
+                        c = sum(x and not o for o, x in zip(yes["dual"], yes[other]))
+                        ps.append(f"{fmt_p(mcnemar(b, c))} ({b} vs {c})")
                     lines.append(f"| {ATTACK_NAMES.get(atk, atk)} | {pct(succ, n)} | " + " | ".join(cells)
                                  + " | " + " | ".join(ps) + " |")
             lines.append("")
