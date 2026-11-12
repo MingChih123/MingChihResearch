@@ -91,7 +91,7 @@
   python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --num_samples 200 --seed 0 --clean_only
 
 --model_name gemini(2026-11-12 新增):不用本機 Qwen,改問 Gemini API(免費額度),不需要 GPU。
-  先在 CMD 設定金鑰:set GEMINI_API_KEY=你的金鑰(只在這個 CMD 視窗有效)
+  先在 CMD 設定金鑰:set "GEMINI_API_KEY=你的金鑰"(只在這個 CMD 視窗有效)
   只能跑不用梯度的攻擊(caption_* / image_text_* / homoglyph)和防禦(none / text / tq / strip / nocap 等)。
   每個回答都存在 output/gemini_cache_<模型>.jsonl,額度用完中斷時,隔天「同一個指令」再跑一次會接著做。
   --gemini_model 換模型、--gemini_rpm 每分鐘最多幾次請求(照 AI Studio 上的免費額度設定)。
@@ -727,9 +727,10 @@ class GeminiClient:
         import requests  # installed together with transformers
         self.requests = requests
         self.model = model
-        self.key = os.environ.get("GEMINI_API_KEY", "").strip()
+        # CMD keeps quotes and the space before && as part of the value: strip them
+        self.key = os.environ.get("GEMINI_API_KEY", "").strip().strip("'\"").strip()
         if not self.key:
-            raise SystemExit("GEMINI_API_KEY is not set. In CMD run:  set GEMINI_API_KEY=your_key  (then the command)")
+            raise SystemExit('GEMINI_API_KEY is not set. In CMD run:  set "GEMINI_API_KEY=your_key"  (then the command)')
         self.min_interval = 60.0 / rpm if rpm > 0 else 0.0
         self.last_call = 0.0
         self.max_side = max_side
