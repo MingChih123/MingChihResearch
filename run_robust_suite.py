@@ -89,6 +89,12 @@
   python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --num_samples 150 --seed 0
   # 正常圖片的副作用(Yes/No 混合,不攻擊)
   python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --num_samples 200 --seed 0 --clean_only
+
+--model_name gemini(2026-11-12 新增):不用本機 Qwen,改問 Gemini API(免費額度),不需要 GPU。
+  先在 CMD 設定金鑰:set GEMINI_API_KEY=你的金鑰(只在這個 CMD 視窗有效)
+  只能跑不用梯度的攻擊(caption_* / image_text_* / homoglyph)和防禦(none / text / tq / strip / nocap 等)。
+  每個回答都存在 output/gemini_cache_<模型>.jsonl,額度用完中斷時,隔天「同一個指令」再跑一次會接著做。
+  --gemini_model 換模型、--gemini_rpm 每分鐘最多幾次請求(照 AI Studio 上的免費額度設定)。
 """
 import argparse
 import gc
@@ -639,6 +645,8 @@ CLAIM_PROMPT_V2 = ('A disclaimer is text that tells the reader the meme is harml
 
 @torch.no_grad()
 def predict_text_only(model, processor, prompt, max_new_tokens):
+    if is_api_model(model):
+        return model.ask(None, prompt)
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = processor(text=[text], padding=True, return_tensors="pt").to(model.device)
@@ -697,9 +705,146 @@ def strip_defense(model, processor, img_path, question, caption, args, work_dir,
     return majority_vote(answers), ("Yes" if "Yes" in answers else "No"), votes
 
 
+# ---------------- Gemini API backend (2026-11-12) ----------------
+# --model_name gemini sends every question to the Gemini API instead of the local Qwen model.
+# Only attacks/defenses that need no gradients and no model internals are allowed (see GEMINI_* below).
+# Every answer is cached on disk, so a run stopped by the free-tier daily limit can simply be started again.
+
+GEMINI_ATTACKS = set(TEXT_ATTACKS)
+GEMINI_DEFENSES = {"none", "jpeg", "text", "text_anyyes", "transform", "tq", "norm", "guard", "main_safe",
+                   "neg", "main_neg", "strip", "nocap"}
+
+
+QUOTA_MSG = ("\n[STOP] Gemini quota / rate limit reached. Answers so far are cached in output/gemini_cache_*.jsonl.\n"
+             "Run the SAME command again later (e.g. tomorrow for the daily limit); cached answers are reused.\n")
+
+
+class GeminiClient:
+    """Minimal Gemini REST client (no extra packages). The API key is read from the GEMINI_API_KEY
+    environment variable and is never written to the output files."""
+
+    def __init__(self, model, rpm, cache_path, max_side):
+        import requests  # installed together with transformers
+        self.requests = requests
+        self.model = model
+        self.key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not self.key:
+            raise SystemExit("GEMINI_API_KEY is not set. In CMD run:  set GEMINI_API_KEY=your_key  (then the command)")
+        self.min_interval = 60.0 / rpm if rpm > 0 else 0.0
+        self.last_call = 0.0
+        self.max_side = max_side
+        self.cache_path = cache_path
+        self.cache = {}
+        if os.path.exists(cache_path):
+            with open(cache_path, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        rec = json.loads(line)
+                        self.cache[rec["k"]] = rec["a"]
+                    except (ValueError, KeyError):
+                        continue
+        self.stats = Counter()
+        self.use_thinking_cfg = True
+        print(f"Gemini model: {model} | {len(self.cache)} cached answers | max {rpm} requests/min", flush=True)
+
+    def _image_b64(self, path):
+        import base64
+        img = Image.open(path).convert("RGB")
+        if max(img.size) > self.max_side:
+            s = self.max_side / max(img.size)
+            img = img.resize((max(1, round(img.width * s)), max(1, round(img.height * s))), Image.BICUBIC)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        data = buf.getvalue()
+        return base64.b64encode(data).decode("ascii"), zlib.crc32(data)
+
+    def _post(self, body):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        delay = 10.0
+        for attempt in range(7):
+            wait = self.min_interval - (time.time() - self.last_call)
+            if wait > 0:
+                time.sleep(wait)
+            self.last_call = time.time()
+            try:
+                r = self.requests.post(url, json=body, timeout=120,
+                                       headers={"x-goog-api-key": self.key, "Content-Type": "application/json"})
+            except self.requests.RequestException as e:
+                print(f"    network error ({e.__class__.__name__}), retry in {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 300)
+                continue
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 400 and self.use_thinking_cfg and "thinking" in r.text.lower():
+                # this model does not accept thinkingConfig: drop it and try again
+                self.use_thinking_cfg = False
+                body.get("generationConfig", {}).pop("thinkingConfig", None)
+                continue
+            if r.status_code == 429:
+                self.stats["rate_limited"] += 1
+                if "PerDay" in r.text or "per day" in r.text.lower():
+                    raise SystemExit(QUOTA_MSG + r.text[:300])
+                print(f"    rate limited (429), retry in {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 300)
+                continue
+            if r.status_code in (500, 502, 503, 504):
+                print(f"    server error {r.status_code}, retry in {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 300)
+                continue
+            raise RuntimeError(f"Gemini API error {r.status_code}: {r.text[:500]}")
+        raise SystemExit(QUOTA_MSG + "too many failed retries (rate limit or server errors)")
+
+    def ask(self, image_path, prompt):
+        parts, img_sig = [], ""
+        if image_path is not None:
+            b64, crc = self._image_b64(image_path)
+            parts.append({"inline_data": {"mime_type": "image/png", "data": b64}})
+            img_sig = f"{crc:08x}"
+        parts.append({"text": prompt})
+        key = f"{self.model}|{img_sig}|{zlib.crc32(prompt.encode('utf-8')):08x}|{len(prompt)}"
+        if key in self.cache:
+            self.stats["cached"] += 1
+            return self.cache[key]
+        gen_cfg = {"temperature": 0, "maxOutputTokens": 1024}
+        if self.use_thinking_cfg:
+            gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
+        body = {"contents": [{"role": "user", "parts": parts}],
+                "generationConfig": gen_cfg,
+                # The memes are the data being judged; do not let the API's own filter hide the answer
+                "safetySettings": [{"category": c, "threshold": "BLOCK_NONE"} for c in (
+                    "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")]}
+        resp = self._post(body)
+        self.stats["api_calls"] += 1
+        cands = resp.get("candidates") or []
+        if not cands:
+            self.stats["blocked"] += 1
+            answer = "Blocked"
+        else:
+            text = "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+            if not text.strip():
+                self.stats["blocked" if cands[0].get("finishReason") == "SAFETY" else "empty"] += 1
+                answer = "Blocked" if cands[0].get("finishReason") == "SAFETY" else "Unclear"
+            else:
+                answer = parse_answer(text)
+        self.cache[key] = answer
+        with open(self.cache_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"k": key, "a": answer}) + "\n")
+        return answer
+
+
+def is_api_model(model):
+    return isinstance(model, GeminiClient)
+
+
 # ---------------- defenses ----------------
 
 def predict_path(model, processor, path, question, max_new_tokens):
+    if is_api_model(model):
+        return model.ask(path, question)
     inputs = build_inputs(processor, path, question, model.device)
     out = parse_answer(generate_with_pixel_values(model, processor, inputs, inputs.pixel_values, max_new_tokens))
     del inputs
@@ -907,6 +1052,12 @@ def main():
     parser.add_argument("--max_pixels", type=int, default=512 * 28 * 28)
     parser.add_argument("--token_mode", type=str, default="nospace")
     parser.add_argument("--config_name", type=str, default="")
+    parser.add_argument("--gemini_model", type=str, default="gemini-2.5-flash",
+                        help="--model_name gemini: which Gemini model (check the names in Google AI Studio)")
+    parser.add_argument("--gemini_rpm", type=float, default=8,
+                        help="--model_name gemini: max requests per minute (keep below the free-tier limit)")
+    parser.add_argument("--gemini_max_side", type=int, default=768,
+                        help="--model_name gemini: images are shrunk so the longer side is at most this")
     args = parser.parse_args()
     assert '"' not in args.inject_text, "--inject_text must not contain double quotes"
     assert '"' not in args.persuade_text, "--persuade_text must not contain double quotes"
@@ -917,6 +1068,11 @@ def main():
         assert a in ALL_ATTACKS, f"unknown attack {a}"
     for d in defenses:
         assert d in ALL_DEFENSES, f"unknown defense {d}"
+    use_api = args.model_name.lower() == "gemini"
+    if use_api:
+        bad = [a for a in attacks if a not in GEMINI_ATTACKS] if not args.clean_only else []
+        bad += [d for d in defenses if d not in GEMINI_DEFENSES]
+        assert not bad, f"not possible with --model_name gemini (needs gradients or model internals): {bad}"
     keys = defense_keys(defenses)
     if args.template_set == "auto":
         args.template_set = "HarMeme" if "harmeme" in args.dataset_root.lower() else "FB"
@@ -928,7 +1084,7 @@ def main():
     set_seed(args.seed)
     dataset_root = resolve_dataset_root(args.dataset_root)
     data_file = resolve_data_file(args.dataset_root, args.data_file)
-    model_name = resolve_model_name(args.model_name)
+    model_name = args.gemini_model if use_api else resolve_model_name(args.model_name)
     split = os.path.splitext(os.path.basename(data_file))[0]
     mode = "clean" if args.clean_only else "attack"
     ds_tag = os.path.basename(os.path.normpath(args.dataset_root))
@@ -962,9 +1118,14 @@ def main():
         print(f"Attacks: {attacks}")
     print(f"Defenses: {keys}\nTemplates: {args.template_set}\nOutput: {output_path}", flush=True)
 
-    model, processor = load_model(model_name, args.min_pixels, args.max_pixels)
-    yes_ids, no_ids = get_yes_no_token_ids(processor, args.token_mode)
-    builder = PixelValuesBuilder(processor, model.device)
+    if use_api:
+        model = GeminiClient(model_name, args.gemini_rpm,
+                             os.path.join(OUTPUT_DIR, f"gemini_cache_{model_name}.jsonl"), args.gemini_max_side)
+        processor = yes_ids = no_ids = builder = None
+    else:
+        model, processor = load_model(model_name, args.min_pixels, args.max_pixels)
+        yes_ids, no_ids = get_yes_no_token_ids(processor, args.token_mode)
+        builder = PixelValuesBuilder(processor, model.device)
     eps, alpha = args.eps / 255.0, args.alpha / 255.0
     np_rng = np.random.default_rng(args.seed)
 
@@ -981,11 +1142,18 @@ def main():
         seed_offset = args.seed * 1000 + i
 
         # Resize to the exact model resolution and save, so every variant goes through the same pipeline
-        inputs = build_inputs(processor, image_path, question, model.device)
-        _, gh, gw = inputs.image_grid_thw[0].tolist()
-        H, W = gh * builder.patch, gw * builder.patch
-        del inputs
-        x0_pil = Image.open(image_path).convert("RGB").resize((W, H), Image.BICUBIC)
+        if use_api:
+            x0_pil = Image.open(image_path).convert("RGB")
+            if max(x0_pil.size) > args.gemini_max_side:
+                s = args.gemini_max_side / max(x0_pil.size)
+                x0_pil = x0_pil.resize((max(1, round(x0_pil.width * s)), max(1, round(x0_pil.height * s))),
+                                       Image.BICUBIC)
+        else:
+            inputs = build_inputs(processor, image_path, question, model.device)
+            _, gh, gw = inputs.image_grid_thw[0].tolist()
+            H, W = gh * builder.patch, gw * builder.patch
+            del inputs
+            x0_pil = Image.open(image_path).convert("RGB").resize((W, H), Image.BICUBIC)
         x0_path = os.path.join(work_dir, f"{name}_clean.png")
         x0_pil.save(x0_path)
 
@@ -1009,8 +1177,11 @@ def main():
             print(f"  [{i+1}/{len(subset)}] skipped (clean pred={clean_pred})", flush=True)
             continue
 
-        x0 = pil_to_tensor(x0_pil, model.device)
-        x0_inputs = build_inputs(processor, x0_path, question, model.device)
+        if use_api:
+            x0 = x0_inputs = None  # only gradient attacks need tensors; they are not allowed with the API
+        else:
+            x0 = pil_to_tensor(x0_pil, model.device)
+            x0_inputs = build_inputs(processor, x0_path, question, model.device)
         rec["attacks"] = {}
         line = []
         # Push toward the wrong answer: hateful -> No (default), benign -> Yes (swap the token ids)
@@ -1018,7 +1189,8 @@ def main():
         goal = "all" if gt == "Yes" else "any"
         for ai, atk in enumerate(attacks):
             attack_info = None
-            init = random_init(x0, eps, args.seed * 100003 + i * 101 + ai) if args.random_start else None
+            init = (random_init(x0, eps, args.seed * 100003 + i * 101 + ai)
+                    if args.random_start and x0 is not None else None)
             if atk == "pgd":
                 xa, _ = pgd_image_space(model, x0_inputs, builder, x0, a_yes, a_no, eps, alpha, args.num_steps,
                                         init_delta=init)
@@ -1226,6 +1398,10 @@ def main():
             summary["strip_removed"][name] = {"unit_removed_rate": removed / units if units else None,
                                               "all_text_removed_rate": empty / len(vs)}
             print(f"strip [{name}]: removed {removed}/{units} text pieces; all text removed in {empty}/{len(vs)} memes")
+
+    if use_api:
+        summary["gemini"] = {"model": model_name, **dict(model.stats)}
+        print(f"Gemini: {dict(model.stats)} (Blocked = the API refused to answer; counted as not hateful)")
 
     total = time.time() - t0
     print(f"Total time: {total:.1f}s", flush=True)
