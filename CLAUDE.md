@@ -13,6 +13,29 @@
 - 論文大綱:`THESIS_OUTLINE.md`(五章;第 4 章實驗已列出每節要放的表和重點)。
 - 重跑指令:`README.md` 4.5e(FB + HarMeme,config_name final)、4.5f(Qwen2-VL-7B)。
 - 方法圖:Canva https://www.canva.com/d/_FsnjSrjLOeMT3p
+- 老師 11 月意見:training-free 要有足夠多的資料集才有說服力;懷疑 Qwen2-VL-2B 太弱才會被「這只是玩笑」騙 → 補強計畫見第 0.1 節。
+
+---
+
+## 0.1 時程(2026-11-12 定)
+
+目標:**2027 年 1 月底實驗凍結**(農曆年前),2 月底給老師完整初稿,3~4 月修改,**5 月前口試完成**。不花錢、沒有更大的 GPU。
+
+| 時間 | 實驗 | 寫論文 |
+|---|---|---|
+| 11/13 ~ 11/30 | Gemini 免費額度小實驗(README 4.5g):強模型會不會被騙;同時申請 MAMI / PrideMM / Harm-P | 第 2 章文獻探討 |
+| 11 月底 | 跟老師報告 Gemini 結果,確認後面的計畫 | |
+| 12/1 ~ 12/31 | 2B 跑 MAMI、PrideMM:乾淨 + 文字攻擊 + 圖上加字(每個資料集要 3 句問法模板) | 第 3 章研究方法 |
+| 1/1 ~ 1/24 | 本機加一個非 Qwen 的小模型(例如 InternVL2.5-4B),至少跑 FB | 第 4 章(先用 FB / HarMeme) |
+| 1/25 ~ 1/31 | 緩衝、補跑;凍結數字,產生最終表 | |
+| 2 月 | 不跑實驗 | 第 4、5、1 章、摘要;月底給老師初稿 |
+| 3 ~ 5 月 | | 修改兩輪、口試簡報、論文比對、口試 |
+
+- 一定要做:Gemini 小實驗、MAMI + PrideMM、一個非 Qwen 模型(FB)。
+- 落後時依序砍:Kaggle 7B 等級模型 → Harm-P → 非 Qwen 模型的第二個資料集。
+- 不再做:新防禦、新攻擊種類、對 F3 的 adaptive 攻擊(除非老師要求)。
+- Channel 2 問句裡的空 `caption ""` 不改(改了要全部重跑),論文照實寫。
+- 改成要訓練的方法需要老師同意(老師之前說不要重新訓練)。
 
 ---
 
@@ -129,6 +152,7 @@
 ```
 run_robust_suite.py     ★ 所有攻擊與防禦(--clean_only、--attack_all、--tq_transforms、--eot_defense_only、
                           --strip_version、--offset、--model_name、--config_name)
+                          --model_name gemini:改問 Gemini API(只限文字 / 圖上加字攻擊,回答有快取,README 4.5g)
 make_final_tables.py    ★ output/*_final.json → output/_FINAL_TABLES.md(Wilson CI、McNemar)
 analyze_robust.py       顯著性、成本消融、每問法分析(離線)
 aggregate_seeds.py      多 seed 平均 ± 標準差
