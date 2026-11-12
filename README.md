@@ -346,7 +346,7 @@ python -u run_robust_suite.py --dataset_root FB --num_samples 200 --seed 0 --mod
 每個回答都存在 `output/gemini_cache_<模型>.jsonl`;免費額度用完會印 `[STOP]` 停下來,**隔天同一個指令再跑一次**就會接著做(問過的不會再問)。
 
 ```bash
-set GEMINI_API_KEY=你的金鑰
+set "GEMINI_API_KEY=你的金鑰"
 python -u run_robust_suite.py --dataset_root FB --num_samples 100 --seed 0 --model_name gemini --attacks caption_persuade,caption_inject,image_text_persuade --defenses none --config_name gemini_pilot
 ```
 - 第一步只看「會不會被騙」(`--defenses none`),大約 250 次請求。
@@ -354,7 +354,7 @@ python -u run_robust_suite.py --dataset_root FB --num_samples 100 --seed 0 --mod
 - 乾淨圖(誤判率):`--clean_only --num_samples 100 --defenses none`
 - 模型名稱和每分鐘請求上限會變,先到 Google AI Studio 看目前的免費模型與額度,再用 `--gemini_model`、`--gemini_rpm` 設定。
 - 回答被 Gemini 的安全機制擋掉時記成 `Blocked`(當作沒判仇恨),最後 summary 會印出次數。
-- **不要把金鑰寫進任何檔案或貼到聊天室**;`set` 只在這個 CMD 視窗有效,關掉就沒了。
+- **不要把金鑰寫進任何檔案或貼到聊天室**;`set` 只在這個 CMD 視窗有效;金鑰外面不要加單引號,關掉就沒了。
 
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 

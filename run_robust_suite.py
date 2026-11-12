@@ -91,7 +91,7 @@
   python -u run_robust_suite.py --dataset_root FB --data_file train_vqa.json --num_samples 200 --seed 0 --clean_only
 
 --model_name gemini(2026-11-12 新增):不用本機 Qwen,改問 Gemini API(免費額度),不需要 GPU。
-  先在 CMD 設定金鑰:set GEMINI_API_KEY=你的金鑰(只在這個 CMD 視窗有效)
+  先在 CMD 設定金鑰:set "GEMINI_API_KEY=你的金鑰"(只在這個 CMD 視窗有效)
   只能跑不用梯度的攻擊(caption_* / image_text_* / homoglyph)和防禦(none / text / tq / strip / nocap 等)。
   每個回答都存在 output/gemini_cache_<模型>.jsonl,額度用完中斷時,隔天「同一個指令」再跑一次會接著做。
   --gemini_model 換模型、--gemini_rpm 每分鐘最多幾次請求(照 AI Studio 上的免費額度設定)。
@@ -727,9 +727,10 @@ class GeminiClient:
         import requests  # installed together with transformers
         self.requests = requests
         self.model = model
-        self.key = os.environ.get("GEMINI_API_KEY", "").strip()
+        # CMD keeps quotes and the space before && as part of the value: strip them
+        self.key = os.environ.get("GEMINI_API_KEY", "").strip().strip("'\"").strip()
         if not self.key:
-            raise SystemExit("GEMINI_API_KEY is not set. In CMD run:  set GEMINI_API_KEY=your_key  (then the command)")
+            raise SystemExit('GEMINI_API_KEY is not set. In CMD run:  set "GEMINI_API_KEY=your_key"  (then the command)')
         self.min_interval = 60.0 / rpm if rpm > 0 else 0.0
         self.last_call = 0.0
         self.max_side = max_side
@@ -780,7 +781,11 @@ class GeminiClient:
                 # this model does not accept thinkingConfig: drop it and try again
                 self.use_thinking_cfg = False
                 body.get("generationConfig", {}).pop("thinkingConfig", None)
+                body.get("generationConfig", {})["maxOutputTokens"] = 8192
                 continue
+            if r.status_code == 404:
+                raise SystemExit(f"\n[STOP] Gemini model '{self.model}' is not available. Pick a model listed in "
+                                 f"Google AI Studio and pass it with --gemini_model.\n{r.text[:400]}")
             if r.status_code == 429:
                 self.stats["rate_limited"] += 1
                 if "PerDay" in r.text or "per day" in r.text.lower():
@@ -808,7 +813,8 @@ class GeminiClient:
         if key in self.cache:
             self.stats["cached"] += 1
             return self.cache[key]
-        gen_cfg = {"temperature": 0, "maxOutputTokens": 1024}
+        # Without thinkingConfig the model may think first; leave room so the Yes/No is not cut off
+        gen_cfg = {"temperature": 0, "maxOutputTokens": 1024 if self.use_thinking_cfg else 8192}
         if self.use_thinking_cfg:
             gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
         body = {"contents": [{"role": "user", "parts": parts}],
@@ -824,12 +830,17 @@ class GeminiClient:
             self.stats["blocked"] += 1
             answer = "Blocked"
         else:
-            text = "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+            # skip "thought" parts (reasoning summaries) so only the final answer is parsed
+            text = "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", [])
+                           if not p.get("thought"))
             if not text.strip():
                 self.stats["blocked" if cands[0].get("finishReason") == "SAFETY" else "empty"] += 1
                 answer = "Blocked" if cands[0].get("finishReason") == "SAFETY" else "Unclear"
             else:
                 answer = parse_answer(text)
+            if self.stats["api_calls"] <= 3:  # show the first raw answers so a wrong setup is visible at once
+                print(f"    [gemini raw] {text.strip()[:120]!r} -> {answer} "
+                      f"(finishReason={cands[0].get('finishReason')})", flush=True)
         self.cache[key] = answer
         with open(self.cache_path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"k": key, "a": answer}) + "\n")
@@ -1052,7 +1063,7 @@ def main():
     parser.add_argument("--max_pixels", type=int, default=512 * 28 * 28)
     parser.add_argument("--token_mode", type=str, default="nospace")
     parser.add_argument("--config_name", type=str, default="")
-    parser.add_argument("--gemini_model", type=str, default="gemini-2.5-flash",
+    parser.add_argument("--gemini_model", type=str, default="gemini-3.8-flash",
                         help="--model_name gemini: which Gemini model (check the names in Google AI Studio)")
     parser.add_argument("--gemini_rpm", type=float, default=8,
                         help="--model_name gemini: max requests per minute (keep below the free-tier limit)")
