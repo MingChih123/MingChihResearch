@@ -67,9 +67,46 @@ HARMEME_TEMPLATES = [
 ]
 
 
+# Datasets added 2026-11 (make_extra_vqa.py). Each entry: q0 (the dataset's own question, also written into
+# test_vqa.json), q1, q2. The wording follows what the dataset labels: misogyny (MAMI), hate in LGBTQ+-related
+# memes (PrideMM), political harm (Harm-P).
+EXTRA_TEMPLATES = {
+    "MAMI": [
+        'Given the meme image with the caption "{caption}", is this meme misogynistic, that is, hateful, '
+        'demeaning or offensive toward women? Answer only Yes or No.',
+        'Looking at this meme, which has the text "{caption}", would you say it expresses hatred, contempt or '
+        'hostility toward women? Answer only Yes or No.',
+        'This meme is captioned "{caption}". Does this meme shame, stereotype, objectify or attack women? '
+        'Answer only Yes or No.',
+    ],
+    "PrideMM": [
+        'Given the meme image with the caption "{caption}", does this meme contain hateful content targeting '
+        'a person, a group or a community (e.g. LGBTQ+ people)? Answer only Yes or No.',
+        'Looking at this meme, which has the text "{caption}", would you say it expresses hatred or hostility '
+        'toward any person or group, such as LGBTQ+ people? Answer only Yes or No.',
+        'This meme is captioned "{caption}". Is this meme hateful, discriminatory or offensive toward a '
+        'specific person, group or community? Answer only Yes or No.',
+    ],
+    "HarmP": [
+        'Given the meme image with the caption "{caption}", does this meme contain harmful content targeting '
+        'a specific individual, organization, community or society? Answer only Yes or No.',
+        'Looking at this political meme, which has the text "{caption}", would you say it is harmful, for '
+        'example by attacking, demeaning or spreading hostility toward someone? Answer only Yes or No.',
+        'This meme is captioned "{caption}". Is this meme offensive, harmful or hostile toward a specific '
+        'person, organization or group? Answer only Yes or No.',
+    ],
+}
+
+
 def make_paraphrase_questions(base_caption, template_set="FB", original_question=None):
     """3 questions for the paraphrase defenses.
-    template_set="FB" (default, unchanged); "HarMeme" uses the dataset's own question as q0."""
+    template_set="FB" (default, unchanged); "HarMeme" and the EXTRA_TEMPLATES sets use the dataset's own
+    question as q0."""
+    if template_set in EXTRA_TEMPLATES:
+        q0, q1, q2 = EXTRA_TEMPLATES[template_set]
+        if original_question is None:
+            original_question = q0.format(caption=base_caption)
+        return [original_question, q1.format(caption=base_caption), q2.format(caption=base_caption)]
     if template_set == "HarMeme":
         if original_question is None:
             original_question = (f'Given the meme image with the caption "{base_caption}", does this meme '

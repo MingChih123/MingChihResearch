@@ -356,6 +356,27 @@ python -u run_robust_suite.py --dataset_root FB --num_samples 100 --seed 0 --mod
 - 回答被 Gemini 的安全機制擋掉時記成 `Blocked`(當作沒判仇恨),最後 summary 會印出次數。
 - **不要把金鑰寫進任何檔案或貼到聊天室**;`set` 只在這個 CMD 視窗有效;金鑰外面不要加單引號,關掉就沒了。
 
+### 4.5h 更多仇恨類型:MAMI、PrideMM、Harm-P(2026-11-16)
+
+資料夾放法(照官方下載的結構,不用改):
+```
+dataset/MAMI/      test.tsv、Images/test_images/
+dataset/PrideMM/   PrideMM.csv、Images/
+dataset/HarmP/     Harm-P/data/datasets/memes/defaults/(annotations/test.jsonl、images/)
+```
+(`HarmP/Harm-C` 就是 HarMeme,已經有了,不用再跑。)
+
+1. 轉成 VQA 格式(每個資料集寫一個 `test_vqa.json`,只用官方 test 切分),**把輸出貼給 Claude 確認**:
+```bash
+python make_extra_vqa.py
+```
+2. 確認沒問題再跑(問法會依資料集自動選:MAMI 問厭女、PrideMM 問仇恨、Harm-P 問有害):
+```bash
+python -u run_robust_suite.py --dataset_root PrideMM --num_samples -1 --seed 0 --clean_only --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final & python -u run_robust_suite.py --dataset_root PrideMM --num_samples -1 --seed 0 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad,image_text_persuade,pgd,pgd_jpeg,pgd_persuade --tq_transforms resize50 --defenses none,jpeg,text,tq,strip,nocap,f3 --config_name final
+```
+MAMI、Harm-P 把 `PrideMM` 換成 `MAMI`、`HarmP` 就好。MAMI 的 test 有 1000 張,乾淨圖可以先用 `--num_samples 500`(隨機抽 500 張)省時間。
+跑完 `python make_final_tables.py`,新資料集會各自一節。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:

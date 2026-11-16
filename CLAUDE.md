@@ -140,9 +140,13 @@
 |---|---|---|
 | FB Hateful Memes | `dataset/FB/dev_vqa.json`(train 只用來開發) | 500(250 仇恨 / 250 正常),文字乾淨 |
 | HarMeme | `dataset/HarMeme/annotations/valtest_vqa.json` | 531(185 / 346),文字是有錯字的 OCR |
+| MAMI(厭女) | `dataset/MAMI/test_vqa.json`(`make_extra_vqa.py` 產生) | 官方 test(約 1000) |
+| PrideMM(LGBTQ+ 相關仇恨) | `dataset/PrideMM/test_vqa.json` | `PrideMM.csv` 裡 split == test |
+| Harm-P(政治有害) | `dataset/HarmP/Harm-P/data/datasets/memes/defaults/test_vqa.json` | 官方 test;`HarmP/Harm-C` 就是 HarMeme,不要重複算 |
 
 - 格式:`{"image", "question", "answer": "Yes"/"No"}`,迷因文字在 question 的 `caption "..."` 裡。
-- HarMeme 用 `fix_harmeme_paths.py`、`make_harmeme_test_vqa.py` 準備;問法用 `--template_set auto` 自動換。
+- HarMeme 用 `fix_harmeme_paths.py`、`make_harmeme_test_vqa.py` 準備;MAMI / PrideMM / Harm-P 用 `make_extra_vqa.py`(README 4.5h)。
+- 問法用 `--template_set auto` 依資料集名稱自動換(`defense.py`:FB 預設、`HARMEME_TEMPLATES`、`EXTRA_TEMPLATES`)。
 - caption 裡有雙引號會被截斷(`extract_caption`)。
 
 ---
@@ -162,6 +166,7 @@ defense.py              問法模板與舊防禦函式;run_image_attack.py 被 r
                  calibrate_threshold.py、run_textfooler_experiment.py、test_textfooler.py、textattack_wrapper.py、
                  summarize_all.py、summarize_results.py
 HarMeme 準備:fix_harmeme_paths.py、make_harmeme_test_vqa.py、check_harmeme.py
+新資料集準備:make_extra_vqa.py(MAMI、PrideMM、Harm-P → test_vqa.json)
 archive/                已淘汰的檔案與舊文件,不要用
 ```
 
