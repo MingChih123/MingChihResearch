@@ -1086,7 +1086,18 @@ def main():
         assert not bad, f"not possible with --model_name gemini (needs gradients or model internals): {bad}"
     keys = defense_keys(defenses)
     if args.template_set == "auto":
-        args.template_set = "HarMeme" if "harmeme" in args.dataset_root.lower() else "FB"
+        name = os.path.basename(os.path.normpath(args.dataset_root)).lower()
+        root = args.dataset_root.lower()
+        if "harmeme" in root:
+            args.template_set = "HarMeme"
+        elif "mami" in root:
+            args.template_set = "MAMI"
+        elif "pride" in root:
+            args.template_set = "PrideMM"
+        elif "harmp" in root or "harm-p" in root or name == "harmp":
+            args.template_set = "HarmP"
+        else:
+            args.template_set = "FB"
     tq_names = [t for t in args.tq_transforms.split(",") if t]
     for t in tq_names:
         assert t in TRANSFORMS, f"unknown transform {t} (choose from {list(TRANSFORMS)})"

@@ -7,12 +7,19 @@
 DATASET_ROOT_MAP = {
     "FB": "./dataset/FB",
     "HarMeme": "./dataset/HarMeme",
+    # 2026-11: more hate / harm types (test_vqa.json written by make_extra_vqa.py)
+    "MAMI": "./dataset/MAMI",
+    "PrideMM": "./dataset/PrideMM",
+    "HarmP": "./dataset/HarmP/Harm-P/data/datasets/memes/defaults",
 }
 
 # 每個資料集預設要讀哪個 vqa json 檔(相對於 dataset_root 的路徑)
 DATASET_DATA_FILE_MAP = {
     "FB": "dev_vqa.json",
     "HarMeme": "annotations/val_vqa.json",
+    "MAMI": "test_vqa.json",
+    "PrideMM": "test_vqa.json",
+    "HarmP": "test_vqa.json",
 }
 
 MODEL_ALIAS_MAP = {
