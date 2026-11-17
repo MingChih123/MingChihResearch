@@ -26,7 +26,7 @@
 | 11/13 ~ 11/30 | Gemini 免費額度小實驗(README 4.5g):強模型會不會被騙;同時申請 MAMI / PrideMM / Harm-P | 第 2 章文獻探討 |
 | 11 月底 | 跟老師報告 Gemini 結果,確認後面的計畫 | |
 | 12/1 ~ 12/31 | 2B 跑 MAMI、PrideMM:乾淨 + 文字攻擊 + 圖上加字(每個資料集要 3 句問法模板) | 第 3 章研究方法 |
-| 1/1 ~ 1/24 | 本機加一個非 Qwen 的小模型(例如 InternVL2.5-4B),至少跑 FB | 第 4 章(先用 FB / HarMeme) |
+| 1/1 ~ 1/24 | 審核模型 LlavaGuard 0.5B / 7B(README 4.5i,取代原本的「非 Qwen 小模型」;不做 Llama Guard 4、不再跑 Gemini) | 第 4 章(先用 FB / HarMeme) |
 | 1/25 ~ 1/31 | 緩衝、補跑;凍結數字,產生最終表 | |
 | 2 月 | 不跑實驗 | 第 4、5、1 章、摘要;月底給老師初稿 |
 | 3 ~ 5 月 | | 修改兩輪、口試簡報、論文比對、口試 |
@@ -157,6 +157,8 @@
 run_robust_suite.py     ★ 所有攻擊與防禦(--clean_only、--attack_all、--tq_transforms、--eot_defense_only、
                           --strip_version、--offset、--model_name、--config_name)
                           --model_name gemini:改問 Gemini API(只限文字 / 圖上加字攻擊,回答有快取,README 4.5g)
+                          --model_name llavaguard05 / llavaguard7b:審核模型 LlavaGuard v1.2 當判斷者(官方政策 prompt,
+                          Safe/Unsafe;開脫句檢查器預設仍是 Qwen2-VL-2B;只限文字 / 圖上加字攻擊,README 4.5i)
 make_final_tables.py    ★ output/*_final.json → output/_FINAL_TABLES.md(Wilson CI、McNemar)
 analyze_robust.py       顯著性、成本消融、每問法分析(離線)
 aggregate_seeds.py      多 seed 平均 ± 標準差

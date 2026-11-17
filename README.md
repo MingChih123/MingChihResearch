@@ -377,6 +377,28 @@ python -u run_robust_suite.py --dataset_root PrideMM --num_samples -1 --seed 0 -
 MAMI、Harm-P 把 `PrideMM` 換成 `MAMI`、`HarmP` 就好。MAMI 的 test 有 1000 張,乾淨圖可以先用 `--num_samples 500`(隨機抽 500 張)省時間。
 跑完 `python make_final_tables.py`,新資料集會各自一節。
 
+### 4.5i 審核模型:LlavaGuard v1.2(0.5B / 7B,2026-11-17)
+
+LlavaGuard 是專門做內容審核的模型(Helff et al., ICML 2025)。照它官方的用法:圖片 + 官方安全政策 prompt,回答 Safe / Unsafe + 類別(O1 = 仇恨)。迷因文字放在政策前面當 OCR 文字;Channel 2 不放文字。
+
+**第一次用之前(只要做一次):**
+1. 到 Hugging Face 登入,打開 `AIML-TUDA/LlavaGuard-v1.2-0.5B-OV-hf` 和 `AIML-TUDA/LlavaGuard-v1.2-7B-OV-hf` 兩個頁面,按同意條款(要填聯絡資料)。
+2. 到 Hugging Face 的 Settings → Access Tokens 建一個 Read token,然後在 CMD:`huggingface-cli login`,貼上 token。
+3. 要跑 7B 的話:`pip install bitsandbytes`(8GB 只能用 4-bit 載入)。
+
+**先跑 5 張確認(GPU 沒在跑別的時候)**,把輸出貼給 Claude:
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples 5 --seed 0 --model_name llavaguard05 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name guardtest
+```
+確認 `[llavaguard raw]` 有 rating / category 之後,正式跑(FB;其他資料集只換 `--dataset_root`):
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name llavaguard05 --clean_only --tq_transforms resize50 --defenses none,jpeg,tq,strip,nocap --config_name final & python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name llavaguard05 --attacks caption_persuade,caption_persuade_blend,caption_inject,caption_evade,image_text_pad,image_text_persuade --tq_transforms resize50 --defenses none,jpeg,tq,strip,nocap --config_name final
+```
+- 7B:`--model_name llavaguard7b --guard_4bit --guard_detector self`(7B + Qwen 放不進 8GB,所以開脫句檢查改用 LlavaGuard 自己)。
+- 預設「任何 Unsafe 都算有害」;`--guard_positive hate` 只算 O1(仇恨)。換這個參數重跑會直接讀快取(`output/guard_cache_*.jsonl`),幾乎不用時間。
+- 開脫句檢查器預設還是 Qwen2-VL-2B(`--guard_detector qwen2b`),只有「判斷者」換成 LlavaGuard。
+- 只能跑不用梯度的攻擊(caption_* / image_text_*);PGD、F3 不支援。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
