@@ -94,6 +94,7 @@
 - **弱點**:Text-in-image dual 59.3% < 舊方法 69.5%(p=0.07);PGD / PGD-JPEG dual 84.7 / 81.4% < 舊方法 96.6 / 94.9%;PGD-EOT dual 55.9% vs none 47.5%(p=0.23,不顯著)。
 - **全部攻擊(attack_all,500 張)**:Persuade 下 none 51.0%、dual 62.6%(= 乾淨,攻擊無效)。
 - **HarMeme(val + test 531 張,不調參)**:dual 69.1%、誤判 17/346;文字攻擊 0~4% → 87~96%;Text-in-image 只有 39.1%;攻擊樣本只有 23 張。
+- **PrideMM(2026-11-18,Qwen2-VL-2B,test 507 張 = 247 / 260;攻擊 161 張)**:乾淨 none 63.1% / recall 65.2% / FP 101(38.8%,這個資料集模型反而偏向判仇恨);dual 67.1%(McNemar 37 vs 17,p=0.009)/ recall 62.8% / FP 75(28.8%)→ 誤判反而下降。仍認出(none → dual):Persuade 11.2 → 91.3、Blend 26.7 → 89.4、Inject 7.5 → 92.5、Evade 44.1 → 84.5、PGD + Persuade 1.9 → 88.2、圖上加字 + Persuade 1.2 → 46.6。nocap 在四種文字攻擊下都是 82.0%(文字不變性再次成立),dual 都 ≥ 82.0。**圖上加字(image_text_pad)dual 47.2% < 不防禦 62.7%**:q1 / q2 問法(PrideMM 模板)被圖上的「wholesome」騙(q2 只剩 9.3%),多數決拉低 → 圖上開脫句遮罩更重要。PGD 攻擊成功只有 24.8%。
 - **Qwen2-VL-7B(乾淨 200 張、攻擊 50 張)**:dual 75.5% vs none 76.5%(p=0.82);誤判 13 → 24 / 107;Persuade 38 → 100、Text-in-image + Persuade 12 → 80。7B 沒跑 F3 和 PGD(8GB 顯存不夠)。
 
 ---
