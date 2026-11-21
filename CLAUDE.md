@@ -14,6 +14,7 @@
 - 重跑指令:`README.md` 4.5e(FB + HarMeme,config_name final)、4.5f(Qwen2-VL-7B)。
 - 方法圖:Canva https://www.canva.com/d/_FsnjSrjLOeMT3p
 - 老師 11 月意見:training-free 要有足夠多的資料集才有說服力;懷疑 Qwen2-VL-2B 太弱才會被「這只是玩笑」騙 → 補強計畫見第 0.1 節。
+- **2026-11-19 報告後老師決定:先用審核模型 LlavaGuard 試目前的方法可不可行**(在弱模型上加遮罩等改進意義不大);之後再看能不能用 AI / 學習的方式讓方法更精進。OCR 遮罩、學門檻暫緩。PrideMM 已完成,Harm-P / MAMI 照跑(GPU 空檔)。
 
 ---
 
@@ -26,7 +27,7 @@
 | 11/13 ~ 11/30 | Gemini 免費額度小實驗(README 4.5g):強模型會不會被騙;同時申請 MAMI / PrideMM / Harm-P | 第 2 章文獻探討 |
 | 11 月底 | 跟老師報告 Gemini 結果,確認後面的計畫 | |
 | 12/1 ~ 12/31 | 2B 跑 MAMI、PrideMM:乾淨 + 文字攻擊 + 圖上加字(每個資料集要 3 句問法模板) | 第 3 章研究方法 |
-| 1/1 ~ 1/24 | 本機加一個非 Qwen 的小模型(例如 InternVL2.5-4B),至少跑 FB | 第 4 章(先用 FB / HarMeme) |
+| 1/1 ~ 1/24 | 審核模型 LlavaGuard 0.5B / 7B(README 4.5i,取代原本的「非 Qwen 小模型」;不做 Llama Guard 4、不再跑 Gemini) | 第 4 章(先用 FB / HarMeme) |
 | 1/25 ~ 1/31 | 緩衝、補跑;凍結數字,產生最終表 | |
 | 2 月 | 不跑實驗 | 第 4、5、1 章、摘要;月底給老師初稿 |
 | 3 ~ 5 月 | | 修改兩輪、口試簡報、論文比對、口試 |
@@ -94,6 +95,7 @@
 - **弱點**:Text-in-image dual 59.3% < 舊方法 69.5%(p=0.07);PGD / PGD-JPEG dual 84.7 / 81.4% < 舊方法 96.6 / 94.9%;PGD-EOT dual 55.9% vs none 47.5%(p=0.23,不顯著)。
 - **全部攻擊(attack_all,500 張)**:Persuade 下 none 51.0%、dual 62.6%(= 乾淨,攻擊無效)。
 - **HarMeme(val + test 531 張,不調參)**:dual 69.1%、誤判 17/346;文字攻擊 0~4% → 87~96%;Text-in-image 只有 39.1%;攻擊樣本只有 23 張。
+- **PrideMM(2026-11-18,Qwen2-VL-2B,test 507 張 = 247 / 260;攻擊 161 張)**:乾淨 none 63.1% / recall 65.2% / FP 101(38.8%,這個資料集模型反而偏向判仇恨);dual 67.1%(McNemar 37 vs 17,p=0.009)/ recall 62.8% / FP 75(28.8%)→ 誤判反而下降。仍認出(none → dual):Persuade 11.2 → 91.3、Blend 26.7 → 89.4、Inject 7.5 → 92.5、Evade 44.1 → 84.5、PGD + Persuade 1.9 → 88.2、圖上加字 + Persuade 1.2 → 46.6。nocap 在四種文字攻擊下都是 82.0%(文字不變性再次成立),dual 都 ≥ 82.0。**圖上加字(image_text_pad)dual 47.2% < 不防禦 62.7%**:q1 / q2 問法(PrideMM 模板)被圖上的「wholesome」騙(q2 只剩 9.3%),多數決拉低 → 圖上開脫句遮罩更重要。PGD 攻擊成功只有 24.8%。
 - **Qwen2-VL-7B(乾淨 200 張、攻擊 50 張)**:dual 75.5% vs none 76.5%(p=0.82);誤判 13 → 24 / 107;Persuade 38 → 100、Text-in-image + Persuade 12 → 80。7B 沒跑 F3 和 PGD(8GB 顯存不夠)。
 
 ---
@@ -157,6 +159,8 @@
 run_robust_suite.py     ★ 所有攻擊與防禦(--clean_only、--attack_all、--tq_transforms、--eot_defense_only、
                           --strip_version、--offset、--model_name、--config_name)
                           --model_name gemini:改問 Gemini API(只限文字 / 圖上加字攻擊,回答有快取,README 4.5g)
+                          --model_name llavaguard05 / llavaguard7b:審核模型 LlavaGuard v1.2 當判斷者(官方政策 prompt,
+                          Safe/Unsafe;開脫句檢查器預設仍是 Qwen2-VL-2B;只限文字 / 圖上加字攻擊,README 4.5i)
 make_final_tables.py    ★ output/*_final.json → output/_FINAL_TABLES.md(Wilson CI、McNemar)
 analyze_robust.py       顯著性、成本消融、每問法分析(離線)
 aggregate_seeds.py      多 seed 平均 ± 標準差
