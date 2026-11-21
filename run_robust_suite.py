@@ -980,6 +980,13 @@ class GuardModel:
         for prm in self.model.parameters():
             prm.requires_grad_(False)
         self.processor = AutoProcessor.from_pretrained(self.hf_name)
+        # The checkpoint's generation config has no pad / eos token, so generate() warned on every call and never
+        # stopped early. Stop at the chat turn end (<|im_end|>) or the tokenizer's eos; greedy output up to that
+        # point is unchanged, so cached answers stay valid.
+        tok = self.processor.tokenizer
+        stop = [tok.eos_token_id, tok.convert_tokens_to_ids("<|im_end|>")]
+        self.eos_ids = [i for i in dict.fromkeys(stop) if isinstance(i, int) and i != tok.unk_token_id]
+        self.pad_id = tok.pad_token_id if tok.pad_token_id is not None else (self.eos_ids[0] if self.eos_ids else None)
         self.max_side = max_side
         self.positive = positive
         self.detector = None
@@ -1016,7 +1023,8 @@ class GuardModel:
             inputs = self.processor(text=text, return_tensors="pt")
         inputs = {k: (v.to(self.model.device, dtype=torch.float16) if v.is_floating_point() else v.to(self.model.device))
                   for k, v in inputs.items()}
-        out = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, num_beams=1)
+        out = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, num_beams=1,
+                                  pad_token_id=self.pad_id, eos_token_id=self.eos_ids or None)
         ans = self.processor.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
         del inputs, out
         return ans
