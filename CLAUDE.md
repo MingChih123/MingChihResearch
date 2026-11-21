@@ -130,7 +130,8 @@
 ## 7. 環境
 
 - Windows CMD,conda 環境 `pda`,Python 3.10;RTX 3070 **8GB**。
-- torch 2.4.1+cu121、transformers、accelerate、qwen-vl-utils;舊的 TextFooler 需要 textattack 0.3.10、tensorflow 2.13(會報 typing-extensions 版本警告,目前能跑)。
+- torch 2.4.1+cu121、transformers、accelerate、qwen-vl-utils;bitsandbytes 0.45.5(2026-11-22 裝,LlavaGuard 7B 4-bit 用)。
+- 裝 bitsandbytes 時 typing-extensions 升到 4.13.2(torch 要求 ≥ 4.8,原本 4.5 的警告解決了);代價是 tensorflow 2.13(只有舊的 TextFooler 腳本用)要求 < 4.6,TextFooler 之後可能跑不動。主實驗不用 tensorflow;若 transformers 因 tensorflow 出錯,先 `set "USE_TF=0"`。
 - 專案路徑:`C:\Users\USER\Desktop\MChih_Exp\Exp\`。使用者用 `git pull` 更新程式。
 - 7B 要降解析度:`--model_name qwen7b --min_pixels 65536 --max_pixels 200704`,很慢。
 - PGD 時凍結權重、`model.eval()`、不開 gradient checkpointing(開了梯度會變 None)。
