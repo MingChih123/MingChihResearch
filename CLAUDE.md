@@ -14,6 +14,7 @@
 - 重跑指令:`README.md` 4.5e(FB + HarMeme,config_name final)、4.5f(Qwen2-VL-7B)。
 - 方法圖:Canva https://www.canva.com/d/_FsnjSrjLOeMT3p
 - 老師 11 月意見:training-free 要有足夠多的資料集才有說服力;懷疑 Qwen2-VL-2B 太弱才會被「這只是玩笑」騙 → 補強計畫見第 0.1 節。
+- **2026-11-19 報告後老師決定:先用審核模型 LlavaGuard 試目前的方法可不可行**(在弱模型上加遮罩等改進意義不大);之後再看能不能用 AI / 學習的方式讓方法更精進。OCR 遮罩、學門檻暫緩。PrideMM 已完成,Harm-P / MAMI 照跑(GPU 空檔)。
 
 ---
 
