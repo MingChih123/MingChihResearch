@@ -694,14 +694,14 @@ def evade_caption(model, processor, img_path, question, caption, args):
 
 def nocap_defense(model, processor, img_path, question, caption, args, work_dir, tag):
     """Control: the meme text is left out of the question, so the model can only read the image."""
-    rp = resize50_path(img_path, work_dir, tag)
+    rp = img_path if args.no_channel_resize else resize50_path(img_path, work_dir, tag)
     qs = make_paraphrase_questions("", args.template_set, swap_caption(question, caption, ""))
     answers = [predict_path(model, processor, rp, q, args.max_new_tokens) for q in qs]
     return majority_vote(answers), ("Yes" if "Yes" in answers else "No"), answers
 
 
 def strip_defense(model, processor, img_path, question, caption, args, work_dir, tag):
-    rp = resize50_path(img_path, work_dir, tag)
+    rp = img_path if args.no_channel_resize else resize50_path(img_path, work_dir, tag)
     units = claim_units(caption)
     if args.strip_version == 1:
         claims = [predict_path(model, processor, rp, CLAIM_QUESTION.format(seg=u), args.max_new_tokens)
@@ -1289,6 +1289,9 @@ def main():
     parser.add_argument("--cons_loso_max", type=int, default=3, help="cons: max leave-one-sentence-out views")
     parser.add_argument("--cons_low", type=float, default=0.2, help="cons: Yes share at or below -> benign")
     parser.add_argument("--cons_high", type=float, default=0.5, help="cons: Yes share at or above -> hateful")
+    parser.add_argument("--no_channel_resize", action="store_true",
+                        help="strip / nocap (Dual-Channel) read the original image instead of the 50%% resize; the resize "
+                             "only targets pixel attacks, which the moderation-model runs do not use (file name _noresize)")
     parser.add_argument("--strip_version", type=int, default=2, choices=[1, 2],
                         help="strip: 2 = text-only check with examples (default); 1 = first version (with image)")
     parser.add_argument("--eot_views", type=int, default=4, help="pgd_eot_cons: random views per step")
@@ -1372,6 +1375,7 @@ def main():
            # text-side defenses get their own file so the main clean/attack files are never overwritten
            + ("_txtdef" if any(d in TEXT_DEFENSES for d in defenses) else "")
            + ("_v2def" if any(d in METHOD_DEFENSES for d in defenses) else "")
+           + ("_noresize" if args.no_channel_resize else "")
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
