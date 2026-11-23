@@ -399,6 +399,31 @@ python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --mode
 - 開脫句檢查器預設還是 Qwen2-VL-2B(`--guard_detector qwen2b`),只有「判斷者」換成 LlavaGuard。
 - 只能跑不用梯度的攻擊(caption_* / image_text_*);PGD、F3 不支援。
 
+### 4.5j 圖上開脫句遮罩:`--ocr_mask`(2026-11-23)
+
+兩路讀圖之前,先用開源 OCR(EasyOCR)找出圖上每一行字和位置,每一行用和迷因文字同一個開脫句檢查器判斷,是開脫句的那行塗成背景色。描述或嘲笑人的迷因文字不是開脫句,會留下來。不用訓練。
+
+**安裝(只要一次;用 `--no-deps` 避免 pip 動到 torch):**
+```bash
+python -c "import torchvision; print(torchvision.__version__)"
+```
+- 有印出版本(例如 0.19.1)就跳過下一行;出現 `No module named torchvision` 才裝:
+```bash
+pip install torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+```
+```bash
+pip install easyocr --no-deps && pip install opencv-python-headless scikit-image python-bidi PyYAML Shapely pyclipper ninja scipy numpy==1.24.3
+```
+第一次跑會自動下載 EasyOCR 的模型(約 100 MB)。
+
+**先測(LlavaGuard 0.5B,新設計 `--channel_resize ch2`)**:乾淨圖 100 張看會不會亂遮,再跑兩種圖上加字的攻擊:
+```bash
+python -u run_robust_suite.py --dataset_root FB --num_samples 100 --seed 0 --model_name llavaguard05 --guard_detector self --channel_resize ch2 --ocr_mask --clean_only --tq_transforms resize50 --defenses none,strip,nocap --config_name ocrtest & python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name llavaguard05 --guard_detector self --channel_resize ch2 --ocr_mask --attacks image_text_pad,image_text_persuade,caption_persuade --tq_transforms resize50 --defenses none,strip,nocap --config_name ocrtest
+```
+- Summary 最後會印 `ocr_mask [...]: masked a/b text lines`:乾淨圖應該接近 0;圖上加字的攻擊應該接近「每張遮 1 行」。
+- GPU 不夠時加 `--ocr_cpu`(OCR 改用 CPU,比較慢)。
+- 遮過的圖存在 `output/robust_images/<檔名>/..._ocrmask.png`,可以打開看遮得對不對。
+
 ### 4.6 用 train 裡沒用過的樣本擴大樣本數(`--offset`)
 
 dev 只有 59 筆攻擊,信賴區間很寬。模型沒有訓練,所以 train 也可以拿來評估,只要避開開發時用過的樣本:
