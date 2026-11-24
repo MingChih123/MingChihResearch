@@ -668,6 +668,92 @@ def qwen_text_only(model, processor, prompt, max_new_tokens):
     return parse_answer(ans)
 
 
+# ---------------- OCR masking of excuses written on the image (2026-11-23) ----------------
+# --ocr_mask: before the two Dual-Channel paths read the image, an OCR model (EasyOCR, open source, no training)
+# finds the text lines on the image and their boxes; each line goes through the SAME excuse detector as the caption
+# (CLAIM_PROMPT_V2); flagged lines are painted over with the local background colour. Both channels then read the
+# masked image. Meme text that describes or insults people is not an excuse and stays, so the hateful evidence is kept.
+
+_OCR_READER = None
+
+
+def get_ocr_reader(use_gpu):
+    global _OCR_READER
+    if _OCR_READER is None:
+        try:
+            import easyocr
+        except ImportError:
+            raise SystemExit("--ocr_mask needs EasyOCR: see README 4.5j for how to install it without touching torch")
+        print("Loading EasyOCR (English) ...", flush=True)
+        _OCR_READER = easyocr.Reader(["en"], gpu=use_gpu, verbose=False)
+    return _OCR_READER
+
+
+def ocr_lines(img_path, use_gpu, min_conf):
+    """Text lines on the image: OCR boxes whose vertical centres are close are joined, left to right.
+    Returns [{"text", "box": (x0, y0, x1, y1), "conf"}]."""
+    found = get_ocr_reader(use_gpu).readtext(img_path)  # [(4 corner points, text, confidence)]
+    boxes = []
+    for pts, text, conf in found:
+        if conf < min_conf or not text.strip():
+            continue
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        boxes.append({"text": text.strip(), "box": (min(xs), min(ys), max(xs), max(ys)), "conf": float(conf)})
+    boxes.sort(key=lambda b: ((b["box"][1] + b["box"][3]) / 2, b["box"][0]))
+    lines = []
+    for b in boxes:
+        cy, h = (b["box"][1] + b["box"][3]) / 2, b["box"][3] - b["box"][1]
+        if lines:
+            last = lines[-1]
+            ly0, ly1 = last["box"][1], last["box"][3]
+            if abs(cy - (ly0 + ly1) / 2) < 0.5 * max(h, ly1 - ly0):
+                x0, y0, x1, y1 = last["box"]
+                bx0, by0, bx1, by1 = b["box"]
+                last["parts"].append(b)
+                last["box"] = (min(x0, bx0), min(y0, by0), max(x1, bx1), max(y1, by1))
+                last["conf"] = min(last["conf"], b["conf"])
+                continue
+        lines.append({"parts": [b], "box": b["box"], "conf": b["conf"]})
+    out = []
+    for ln in lines:
+        ln["parts"].sort(key=lambda b: b["box"][0])
+        out.append({"text": " ".join(b["text"] for b in ln["parts"]),
+                    "box": tuple(int(round(v)) for v in ln["box"]), "conf": round(ln["conf"], 3)})
+    return out
+
+
+def paint_over(img, box, pad=3):
+    """Fill a box with the median colour of a thin ring around it (looks like the background, no new cues)."""
+    import numpy as _np
+    w, h = img.size
+    x0, y0, x1, y1 = max(0, box[0] - pad), max(0, box[1] - pad), min(w, box[2] + pad), min(h, box[3] + pad)
+    arr = _np.asarray(img)
+    r = 4
+    ring = _np.concatenate([
+        arr[max(0, y0 - r):y0, x0:x1].reshape(-1, 3), arr[y1:min(h, y1 + r), x0:x1].reshape(-1, 3),
+        arr[y0:y1, max(0, x0 - r):x0].reshape(-1, 3), arr[y0:y1, x1:min(w, x1 + r)].reshape(-1, 3)])
+    colour = tuple(int(v) for v in _np.median(ring, axis=0)) if len(ring) else (255, 255, 255)
+    from PIL import ImageDraw
+    ImageDraw.Draw(img).rectangle([x0, y0, x1, y1], fill=colour)
+
+
+def ocr_mask_image(model, processor, img_path, args, work_dir, tag):
+    """Returns (path of the image the two channels read, record of what was found and masked)."""
+    lines = ocr_lines(img_path, not args.ocr_cpu, args.ocr_min_conf)
+    flags = [predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=ln["text"].replace('"', "'")),
+                               args.max_new_tokens) == "Yes" for ln in lines]
+    rec = {"lines": [ln["text"] for ln in lines], "flagged": flags, "boxes": [ln["box"] for ln in lines]}
+    if not any(flags):
+        return img_path, rec
+    img = Image.open(img_path).convert("RGB")
+    for ln, f in zip(lines, flags):
+        if f:
+            paint_over(img, ln["box"])
+    out = os.path.join(work_dir, f"{tag}_ocrmask.png")
+    img.save(out)
+    return out, rec
+
+
 def resize50_path(img_path, work_dir, tag):
     rp = os.path.join(work_dir, f"{tag}_t_resize50.png")
     TRANSFORMS["resize50"](Image.open(img_path).convert("RGB")).save(rp)
@@ -1182,13 +1268,17 @@ def run_defenses(model, processor, img_path, question, caption, defenses, args, 
         votes["cons"] = cv
         preds["cons"], preds["cons_score"] = consensus_decision(cv, args.cons_low, args.cons_high)
 
+    ch_img = img_path  # image the two Dual-Channel paths read (excuses on the image masked with --ocr_mask)
+    if args.ocr_mask and ("strip" in defenses or "nocap" in defenses):
+        ch_img, votes["ocr_mask"] = ocr_mask_image(model, processor, img_path, args, work_dir, tag)
+
     if "strip" in defenses:
         preds["strip"], preds["strip_any"], votes["strip"] = strip_defense(
-            model, processor, img_path, question, caption, args, work_dir, tag)
+            model, processor, ch_img, question, caption, args, work_dir, tag)
 
     if "nocap" in defenses:
         preds["nocap"], preds["nocap_any"], votes["nocap"] = nocap_defense(
-            model, processor, img_path, question, caption, args, work_dir, tag)
+            model, processor, ch_img, question, caption, args, work_dir, tag)
 
     if "strip" in defenses and "nocap" in defenses:
         # dual: two readings of the meme text (cleaned caption / no caption at all); hateful if either says so
@@ -1289,6 +1379,11 @@ def main():
     parser.add_argument("--cons_loso_max", type=int, default=3, help="cons: max leave-one-sentence-out views")
     parser.add_argument("--cons_low", type=float, default=0.2, help="cons: Yes share at or below -> benign")
     parser.add_argument("--cons_high", type=float, default=0.5, help="cons: Yes share at or above -> hateful")
+    parser.add_argument("--ocr_mask", action="store_true",
+                        help="Dual-Channel: OCR the image, run the excuse detector on each text line and paint over "
+                             "flagged lines before both channels read it (needs EasyOCR; file name _ocrmask)")
+    parser.add_argument("--ocr_cpu", action="store_true", help="--ocr_mask: run EasyOCR on the CPU (saves GPU memory)")
+    parser.add_argument("--ocr_min_conf", type=float, default=0.3, help="--ocr_mask: ignore OCR boxes below this")
     parser.add_argument("--channel_resize", type=str, default="both", choices=["both", "ch2", "none"],
                         help="which Dual-Channel path reads the 50%% resized image: both (default, as before); ch2 = only "
                              "Channel 2 (nocap), Channel 1 reads the original image; none = neither (file names _rs-ch2 / _rs-none)")
@@ -1376,6 +1471,7 @@ def main():
            + ("_txtdef" if any(d in TEXT_DEFENSES for d in defenses) else "")
            + ("_v2def" if any(d in METHOD_DEFENSES for d in defenses) else "")
            + ("" if args.channel_resize == "both" else f"_rs-{args.channel_resize}")
+           + ("_ocrmask" if args.ocr_mask else "")
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
@@ -1679,6 +1775,23 @@ def main():
             summary["strip_removed"][name] = {"unit_removed_rate": removed / units if units else None,
                                               "all_text_removed_rate": empty / len(vs)}
             print(f"strip [{name}]: removed {removed}/{units} text pieces; all text removed in {empty}/{len(vs)} memes")
+
+    # OCR masking: how many text lines on the image were judged excuses and painted over
+    if args.ocr_mask and results:
+        if args.clean_only:
+            ov = {"clean": [r["votes"].get("ocr_mask") for r in results]}
+        else:
+            ov = {atk: [r["attacks"][atk]["votes"].get("ocr_mask") for r in results] for atk in attacks}
+        summary["ocr_mask"] = {}
+        for name, vs in ov.items():
+            vs = [v for v in vs if v]
+            n_lines = sum(len(v["lines"]) for v in vs)
+            n_flag = sum(sum(v["flagged"]) for v in vs)
+            n_img = sum(any(v["flagged"]) for v in vs)
+            summary["ocr_mask"][name] = {"lines": n_lines, "masked_lines": n_flag, "memes_masked": n_img,
+                                         "memes": len(vs)}
+            print(f"ocr_mask [{name}]: masked {n_flag}/{n_lines} text lines on the image; "
+                  f"memes with a mask {n_img}/{len(vs)}")
 
     if use_gemini:
         summary["gemini"] = {"model": model_name, **dict(model.stats)}
