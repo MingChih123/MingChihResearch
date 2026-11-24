@@ -130,7 +130,7 @@ ALL_ATTACKS = DEFAULT_ATTACKS + ["pgd_eot", "pgd_eot_max"]
 ALL_DEFENSES = ["none", "jpeg", "text", "text_anyyes", "noise", "transform", "tq"]
 
 DEFAULT_DEFENSES = list(ALL_DEFENSES)
-TEXT_ATTACKS = ["homoglyph", "caption_inject", "image_text", "image_text_pad", "caption_persuade",
+TEXT_ATTACKS = ["homoglyph", "caption_inject", "image_text", "image_text_pad", "image_text_evade", "caption_persuade",
                 "caption_persuade_blend", "caption_evade", "image_text_persuade"]
 # caption_evade: excuses the attacker tries in order, from indirect to explicit
 EVADE_SENTENCES = [
@@ -760,6 +760,29 @@ def resize50_path(img_path, work_dir, tag):
     return rp
 
 
+def evade_image_text(model, processor, x0_pil, question, args, work_dir, name):
+    """Adaptive text-on-image attack against --ocr_mask: the attacker writes each EVADE_SENTENCES excuse on a strip
+    below the image, keeps the first one the excuse detector does not flag (so OCR masking would leave it) and that
+    makes the undefended model answer No; else the first unflagged one; else the last sentence."""
+    first_unflagged, tried = None, []
+    try_path = os.path.join(work_dir, f"{name}_image_text_evade_try.png")
+    for sent in EVADE_SENTENCES:
+        flagged = predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=sent), args.max_new_tokens) == "Yes"
+        fooled = None
+        if not flagged:
+            img = overlay_text(x0_pil, sent, pad=True)
+            img.save(try_path)
+            fooled = predict_path(model, processor, try_path, question, args.max_new_tokens) == "No"
+            if first_unflagged is None:
+                first_unflagged = (sent, img)
+        tried.append({"sentence": sent, "flagged": flagged, "fooled_none": fooled})
+        if fooled:
+            return img, {"image_text": sent, "tried": tried}
+    if first_unflagged is not None:
+        return first_unflagged[1], {"image_text": first_unflagged[0], "tried": tried}
+    return overlay_text(x0_pil, EVADE_SENTENCES[-1], pad=True), {"image_text": EVADE_SENTENCES[-1], "tried": tried}
+
+
 def evade_caption(model, processor, img_path, question, caption, args):
     """Adaptive text attack on strip: pick an excuse that the strip detector misses and that fools the model."""
     unflagged, tried = None, []
@@ -1076,9 +1099,21 @@ class GuardModel:
         self.max_side = max_side
         self.positive = positive
         self.detector = None
+        self.det_tag = {"qwen2b": "qwen", "qwen2b_4bit": "qwen4", "self": "self"}[detector]
         if detector == "qwen2b":
             # the excuse detector of Channel 1 stays Qwen2-VL-2B (text only), so only the judge changes
             self.detector = load_model(resolve_model_name("qwen2b"))
+        elif detector == "qwen2b_4bit":
+            # same detector in 4-bit (about 1.5 GB), so it fits next to LlavaGuard 7B on an 8 GB GPU
+            from transformers import BitsAndBytesConfig, Qwen2VLForConditionalGeneration
+            name = resolve_model_name("qwen2b")
+            print(f"Loading excuse detector: {name} (4-bit) ...", flush=True)
+            qm = Qwen2VLForConditionalGeneration.from_pretrained(
+                name, device_map={"": 0},
+                quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)).eval()
+            for prm in qm.parameters():
+                prm.requires_grad_(False)
+            self.detector = (qm, AutoProcessor.from_pretrained(name))
         self.cache_path = cache_path
         self.cache = {}
         if os.path.exists(cache_path):
@@ -1157,7 +1192,7 @@ class GuardModel:
 
     def ask_text(self, prompt):
         """Text-only Yes/No question (the excuse detector of Channel 1)."""
-        key = f"{self.alias}|det-{'qwen' if self.detector else 'self'}|{zlib.crc32(prompt.encode('utf-8')):08x}|{len(prompt)}"
+        key = f"{self.alias}|det-{self.det_tag}|{zlib.crc32(prompt.encode('utf-8')):08x}|{len(prompt)}"
         if key in self.cache:
             return self.cache[key]
         if self.detector is not None:
@@ -1406,8 +1441,9 @@ def main():
                         help="LlavaGuard: count any Unsafe rating as hateful (unsafe) or only category O1 (hate)")
     parser.add_argument("--guard_4bit", action="store_true",
                         help="LlavaGuard: load in 4-bit (needed for llavaguard7b on 8GB; pip install bitsandbytes)")
-    parser.add_argument("--guard_detector", type=str, default="qwen2b", choices=["qwen2b", "self"],
-                        help="LlavaGuard: model that checks excuse sentences in Channel 1 (qwen2b = same as main runs)")
+    parser.add_argument("--guard_detector", type=str, default="qwen2b", choices=["qwen2b", "qwen2b_4bit", "self"],
+                        help="LlavaGuard: model that checks excuse sentences (caption pieces and OCR lines); qwen2b = "
+                             "same as the Qwen runs; qwen2b_4bit fits next to LlavaGuard 7B on 8 GB; self = LlavaGuard")
     parser.add_argument("--guard_max_side", type=int, default=768,
                         help="LlavaGuard: images are shrunk so the longer side is at most this")
     parser.add_argument("--gemini_max_side", type=int, default=768,
@@ -1618,6 +1654,8 @@ def main():
                 adv = overlay_text(x0_pil, args.image_text)
             elif atk in ("image_text_pad", "image_text_persuade"):
                 adv = overlay_text(x0_pil, args.image_text, pad=True)
+            elif atk == "image_text_evade":
+                adv, attack_info = evade_image_text(model, processor, x0_pil, question, args, work_dir, name)
             else:
                 adv = None  # text attacks keep the clean image
             # Text attacks change the meme text that goes into every question
