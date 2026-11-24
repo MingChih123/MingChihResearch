@@ -97,7 +97,7 @@ python fix_harmeme_paths.py & python make_harmeme_test_vqa.py & python make_extr
 | `--num_samples -1` | 全部(攻擊模式是「全部仇恨迷因」,其中模型原本認得出的才會被攻擊) |
 | `--config_name final` | 檔名加 `_final`,`make_final_tables.py` 只讀這些 |
 
-攻擊:`caption_persuade`(說服句)、`caption_inject`(叫審核者回答 No)、`caption_persuade_blend`(說服句黏進原文)、`caption_evade`(挑檢查器抓不到的開脫句)、`image_text_pad`(圖上加字)、`image_text_persuade`(圖上加字 + 說服句)、`pgd` / `pgd_jpeg` / `pgd_persuade`(像素攻擊,只能用在 Qwen)。
+攻擊:`caption_persuade`(說服句)、`caption_inject`(叫審核者回答 No)、`caption_persuade_blend`(說服句黏進原文)、`caption_evade`(挑檢查器抓不到的開脫句)、`image_text_pad`(圖上加字)、`image_text_persuade`(圖上加字 + 說服句)、`image_text_evade`(圖上寫檢查器抓不到的開脫句,針對 OCR 遮罩的自適應攻擊)、`pgd` / `pgd_jpeg` / `pgd_persuade`(像素攻擊,只能用在 Qwen)。
 
 輸出檔在 `output\`,檔名會帶資料集、模型、攻擊和設定,不會互相覆蓋。
 
@@ -126,13 +126,15 @@ python -u run_robust_suite.py --dataset_root FB --num_samples 200 --seed 0 --mod
 
 ### 4.3 審核模型 LlavaGuard v1.2(0.5B / 7B)
 
-用 LlavaGuard 官方的安全政策 prompt,回答 Safe / Unsafe + 類別(任何類別的 Unsafe 都算有害)。迷因文字放在政策前面當 OCR 文字;第二路不放。開脫句檢查也用 LlavaGuard 自己(`--guard_detector self`)。
+用 LlavaGuard 官方的安全政策 prompt,回答 Safe / Unsafe + 類別(任何類別的 Unsafe 都算有害)。迷因文字放在政策前面當 OCR 文字;第二路不放。
+開脫句檢查器用 `--guard_detector` 選:`qwen2b`(Qwen2-VL-2B 只給文字,**建議**,和 Qwen 的實驗一致)、`qwen2b_4bit`(同一個,4-bit,7B 一定要用這個才放得進 8GB)、`self`(LlavaGuard 自己;0.5B 認不出「wholesome」這類說法,不建議)。
 
 0.5B:
 ```bash
 python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name llavaguard05 --guard_detector self --channel_resize ch2 --clean_only --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name final & python -u run_robust_suite.py --dataset_root FB --num_samples -1 --seed 0 --model_name llavaguard05 --guard_detector self --channel_resize ch2 --attacks caption_persuade,caption_inject,caption_evade,caption_persuade_blend,image_text_pad,image_text_persuade --tq_transforms resize50 --defenses none,tq,strip,nocap --config_name final
 ```
-- 7B:把 `--model_name llavaguard05` 換成 `--model_name llavaguard7b --guard_4bit`。
+- 下面指令是舊的 `self` 版本;新實驗把 `--guard_detector self` 換成 `--guard_detector qwen2b`。
+- 7B:把 `--model_name llavaguard05` 換成 `--model_name llavaguard7b --guard_4bit`,檢查器用 `--guard_detector qwen2b_4bit`。
 - 答案存在 `output\guard_cache_*.jsonl`,同樣的問題重跑會直接讀快取。
 - 只能跑不用梯度的攻擊(沒有 PGD)。
 
