@@ -668,6 +668,33 @@ def qwen_text_only(model, processor, prompt, max_new_tokens):
     return parse_answer(ans)
 
 
+# ---------------- excuse detector: prompted VLM (default) or trained classifier (--excuse_detector) ----------------
+
+_EXCUSE_CLF = None
+
+
+def load_excuse_detector(path):
+    """Small text classifier trained by train_excuse_detector.py (label 1 = excuse / disclaimer)."""
+    global _EXCUSE_CLF
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    tok = AutoTokenizer.from_pretrained(path)
+    clf = AutoModelForSequenceClassification.from_pretrained(path).to("cuda" if torch.cuda.is_available() else "cpu")
+    clf.eval()
+    _EXCUSE_CLF = (tok, clf)
+    print(f"Excuse detector: trained classifier from {path}", flush=True)
+
+
+@torch.no_grad()
+def is_excuse(model, processor, seg, args):
+    """True if a piece of text (caption piece, OCR line, attack sentence) claims the meme is harmless / a joke."""
+    if _EXCUSE_CLF is not None:
+        tok, clf = _EXCUSE_CLF
+        enc = tok([seg], truncation=True, max_length=64, return_tensors="pt").to(clf.device)
+        return torch.softmax(clf(**enc).logits, dim=-1)[0, 1].item() >= args.excuse_threshold
+    return predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=seg.replace('"', "'")),
+                             args.max_new_tokens) == "Yes"
+
+
 # ---------------- OCR masking of excuses written on the image (2026-11-23) ----------------
 # --ocr_mask: before the two Dual-Channel paths read the image, an OCR model (EasyOCR, open source, no training)
 # finds the text lines on the image and their boxes; each line goes through the SAME excuse detector as the caption
@@ -740,8 +767,7 @@ def paint_over(img, box, pad=3):
 def ocr_mask_image(model, processor, img_path, args, work_dir, tag):
     """Returns (path of the image the two channels read, record of what was found and masked)."""
     lines = ocr_lines(img_path, not args.ocr_cpu, args.ocr_min_conf)
-    flags = [predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=ln["text"].replace('"', "'")),
-                               args.max_new_tokens) == "Yes" for ln in lines]
+    flags = [is_excuse(model, processor, ln["text"], args) for ln in lines]
     rec = {"lines": [ln["text"] for ln in lines], "flagged": flags, "boxes": [ln["box"] for ln in lines]}
     if not any(flags):
         return img_path, rec
@@ -767,7 +793,7 @@ def evade_image_text(model, processor, x0_pil, question, args, work_dir, name):
     first_unflagged, tried = None, []
     try_path = os.path.join(work_dir, f"{name}_image_text_evade_try.png")
     for sent in EVADE_SENTENCES:
-        flagged = predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=sent), args.max_new_tokens) == "Yes"
+        flagged = is_excuse(model, processor, sent, args)
         fooled = None
         if not flagged:
             img = overlay_text(x0_pil, sent, pad=True)
@@ -787,7 +813,7 @@ def evade_caption(model, processor, img_path, question, caption, args):
     """Adaptive text attack on strip: pick an excuse that the strip detector misses and that fools the model."""
     unflagged, tried = None, []
     for sent in EVADE_SENTENCES:
-        flagged = predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=sent), args.max_new_tokens) == "Yes"
+        flagged = is_excuse(model, processor, sent, args)
         cap = (caption.rstrip() + " " + sent) if caption else sent
         fooled = None
         if not flagged:
@@ -816,8 +842,7 @@ def strip_defense(model, processor, img_path, question, caption, args, work_dir,
         claims = [predict_path(model, processor, rp, CLAIM_QUESTION.format(seg=u), args.max_new_tokens)
                   for u in units]
     else:
-        claims = [predict_text_only(model, processor, CLAIM_PROMPT_V2.format(seg=u), args.max_new_tokens)
-                  for u in units]
+        claims = ["Yes" if is_excuse(model, processor, u, args) else "No" for u in units]
     kept = " ".join(u for u, c in zip(units, claims) if c != "Yes") if units else caption
     qs = make_paraphrase_questions(kept, args.template_set, swap_caption(question, caption, kept))
     answers = [predict_path(model, processor, rp, q, args.max_new_tokens) for q in qs]
@@ -1414,6 +1439,10 @@ def main():
     parser.add_argument("--cons_loso_max", type=int, default=3, help="cons: max leave-one-sentence-out views")
     parser.add_argument("--cons_low", type=float, default=0.2, help="cons: Yes share at or below -> benign")
     parser.add_argument("--cons_high", type=float, default=0.5, help="cons: Yes share at or above -> hateful")
+    parser.add_argument("--excuse_detector", type=str, default="",
+                        help="path of a trained excuse classifier (train_excuse_detector.py) used instead of the "
+                             "prompted VLM check, for caption pieces, OCR lines and the adaptive attacks (file name _det-<name>)")
+    parser.add_argument("--excuse_threshold", type=float, default=0.5, help="--excuse_detector: excuse if prob >= this")
     parser.add_argument("--ocr_mask", action="store_true",
                         help="Dual-Channel: OCR the image, run the excuse detector on each text line and paint over "
                              "flagged lines before both channels read it (needs EasyOCR; file name _ocrmask)")
@@ -1508,6 +1537,7 @@ def main():
            + ("_v2def" if any(d in METHOD_DEFENSES for d in defenses) else "")
            + ("" if args.channel_resize == "both" else f"_rs-{args.channel_resize}")
            + ("_ocrmask" if args.ocr_mask else "")
+           + (f"_det-{os.path.basename(os.path.normpath(args.excuse_detector))}" if args.excuse_detector else "")
            + (f"_{args.config_name}" if args.config_name else ""))
     output_path = os.path.join(OUTPUT_DIR, tag + ".json")
     work_dir = os.path.join(OUTPUT_DIR, "robust_images", tag)
@@ -1526,6 +1556,8 @@ def main():
         print(f"Attacks: {attacks}")
     print(f"Defenses: {keys}\nTemplates: {args.template_set}\nOutput: {output_path}", flush=True)
 
+    if args.excuse_detector:
+        load_excuse_detector(args.excuse_detector)
     if use_gemini:
         model = GeminiClient(model_name, args.gemini_rpm,
                              os.path.join(OUTPUT_DIR, f"gemini_cache_{model_name}.jsonl"), args.gemini_max_side)
