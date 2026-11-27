@@ -124,6 +124,12 @@
   - Qwen 2B 乾淨 500 張 + 遮罩:0/936 行被遮,dual 61.8% / 誤判 27(和沒遮罩一樣)。
   - **LlavaGuard 7B(87 張,4-bit Qwen 檢查器)**:圖上加字 46.0 → **96.6**、圖上加字 + Persuade 43.7 → **96.6**(85/87 張遮到)、Inject 55.2 → 98.9、Evade 85.1 → 94.3、Blend 96.6 → 98.9;自適應 `image_text_evade` 7B 本身只被騙 20.7%(79.3 → 87.4,檢查器 0 張抓到)。這次跑了 63 小時(7 種攻擊 × 7B + 4-bit Qwen + OCR,evade 類每張要試多句),之後 7B 不要再跑 evade / blend 和 tq。
 
+- **訓練過的開脫句偵測器(11/27,`--excuse_detector models/excuse_detector`,ch2 + OCR 遮罩)**:訓練時沒看過的攻擊句抓到 11/13(實際 12 句不同),FB dev 文字誤判 0/632。
+  - Qwen 2B 乾淨 500 張:dual 61.8%、誤判不變;OCR 誤遮 1/936 行(prompt 檢查器 0/936)。
+  - Qwen 2B 自適應 `image_text_evade`:遮到 37/59(prompt 檢查器 8/59),dual 81.4 → **89.8**;`caption_evade` dual 94.9(不變)。其他攻擊和 prompt 檢查器一樣(Persuade 100、Inject 96.6、圖上加字 96.6)。
+  - LG0.5B:`image_text_evade` 遮到 21/47(之前 6/47),dual 53.2 → **68.1**;`caption_evade` dual 87.2;圖上加字 80.9(不變)。
+  - 注意:自適應攻擊會挑「這個檢查器抓不到」的句子,檢查器變強 → 攻擊者能用的句子變少 → 「不防禦」那欄也跟著變(Qwen image_text_evade 30.5 → 57.6),所以只比 dual 欄。攻擊者只有固定 10 句,還不是最強的攻擊(可以再用 LLM 大量改寫)。
+
 **共同弱點:圖上加字(各模型 dual 只有 47~60%,ch2 下 50~60%)** → OCR 遮罩要處理的就是這個。
 
 ---
