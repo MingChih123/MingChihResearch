@@ -149,7 +149,24 @@ python -u run_robust_suite.py --dataset_root FB --num_samples 100 --seed 0 --mod
 - Summary 最後印 `ocr_mask [...]: masked a/b text lines`:乾淨圖應該接近 0;圖上加字的攻擊應該接近每張 1 行。
 - GPU 不夠時加 `--ocr_cpu`。遮過的圖存在 `output\robust_images\...\*_ocrmask.png`,可以打開檢查。
 
-### 4.5 整理表格
+### 4.5 訓練過的開脫句偵測器(`train_excuse_detector.py` + `--excuse_detector`)
+
+用 prompt 問 VLM 的開脫句檢查器換個說法就會漏,所以另外訓練一個小的文字分類器(distilroberta-base,約 8 千萬參數)。判斷仇恨的模型完全不動。
+- 正例:模板產生的各種開脫說法 + 變形(全小寫、去標點、黏在迷因文字後面);可加 Qwen 改寫(`--qwen_paraphrase 400`)。
+- 負例:各資料集 **train** 切分的迷因文字(含仇恨內容)。
+- 保留測試(訓練不用):所有攻擊用的句子(Evade 的 10 句等)和 FB dev 的迷因文字切段(量誤判)。
+- 預設做一輪對抗訓練:找出第一輪漏掉的新說法,加回去再訓練。
+
+```bash
+python train_excuse_detector.py --dry_run
+python train_excuse_detector.py
+```
+- `--dry_run` 只建資料、印出例子(不用 GPU),先確認讀到哪些資料集。
+- 正式訓練約 10~30 分鐘(8GB GPU)。最後印出「保留的攻擊句抓到幾句」和「FB dev 迷因文字被誤判幾段」,結果也存在 `models/excuse_detector/report.json`。
+
+接到實驗:在任何指令後面加 `--excuse_detector models/excuse_detector`(檔名會多 `_det-excuse_detector`)。它會取代第一路切段、OCR 遮罩,以及自適應攻擊(Evade、圖上換說法)裡用的檢查器。攻擊者也知道這個偵測器,所以自適應攻擊會針對它挑句子。
+
+### 4.6 整理表格
 
 ```bash
 python make_final_tables.py

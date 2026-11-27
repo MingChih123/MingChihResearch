@@ -14,7 +14,8 @@
   1. ✅ 新設計 `--channel_resize ch2`(只有第二路縮放)已在 LlavaGuard 0.5B / 7B 和 Qwen2-VL-2B(含 PGD)上跑完(11/24),定為主設定。
   2. **OCR 遮罩 `--ocr_mask`**:第一次測試有效(LlavaGuard 0.5B,圖上加字 59.6 → 80.9,見第 6 節),**檢查器要用 Qwen2-VL-2B**(`--guard_detector qwen2b`;7B 用 `qwen2b_4bit`,4-bit 才放得進 8GB)。待跑:乾淨圖誤遮檢查、自適應攻擊 `image_text_evade`(圖上寫檢查器抓不到的開脫句)、Qwen 2B 和 LlavaGuard 7B 的完整結果。
   - 最終設計 = ch2 + `--ocr_mask` + Qwen2-VL-2B 開脫句檢查器。`make_final_tables.py` 目前只依「資料集 × 模型」分節,同一節會混到不同設定(both / ch2 / ocrmask)的檔案,出最終表前要改成也依設定分開。
-  3. 下一步(要老師同意):訓練一個小的開脫句偵測器(對抗 Evade 這類換句話說的攻擊);用信心分數決定何時相信第二路(降低誤判)。
+  3. **訓練過的開脫句偵測器**(程式已寫好,12/3 報告時請老師同意再正式用):`train_excuse_detector.py` 訓練 distilroberta-base 文字分類器(模板 + 變形 + 可選 Qwen 改寫的開脫句當正例、各資料集 train 的迷因文字當負例、一輪對抗訓練);攻擊用的句子和 FB dev 文字完全保留做測試。`run_robust_suite.py --excuse_detector models/excuse_detector` 取代 prompt 檢查器(切段、OCR 遮罩、自適應攻擊都用它)。README 4.5。
+  4. 之後可做:用信心分數決定何時相信第二路(降低誤判);審核模型上的像素攻擊(目前 PGD 程式只支援 Qwen)。
 - 時程:**2027 年 1 月底實驗凍結**,2 月寫完初稿,3~4 月修改,5 月前口試。不花錢、只有 8GB GPU。
 - Harm-P、MAMI(Qwen2-VL-2B)還沒跑完(上次電腦關機),GPU 有空再補。
 
@@ -159,7 +160,8 @@
 ## 10. 程式結構(只列現在用的)
 
 ```
-run_robust_suite.py     ★ 所有攻擊、防禦、模型後端(Qwen / LlavaGuard)、--channel_resize、--ocr_mask
+run_robust_suite.py     ★ 所有攻擊、防禦、模型後端(Qwen / LlavaGuard)、--channel_resize、--ocr_mask、--excuse_detector
+train_excuse_detector.py  訓練小的開脫句偵測器(distilroberta-base),輸出 models/excuse_detector
 make_final_tables.py    ★ output/*_final.json → output/_FINAL_TABLES.md(Wilson CI、McNemar)
 make_extra_vqa.py         MAMI / PrideMM / Harm-P → test_vqa.json
 defense.py                問法模板(FB、HARMEME_TEMPLATES、EXTRA_TEMPLATES)、majority_vote
